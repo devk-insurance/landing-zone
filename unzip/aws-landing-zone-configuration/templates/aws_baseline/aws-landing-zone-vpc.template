@@ -2,10 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: This template creates a Multi-AZ, multi-subnet VPC infrastructure with
   managed NAT gateways in the public subnet for each Availability Zone. You can also
   create additional private subnets with dedicated custom network access control lists
-  (ACLs). If you deploy the Quick Start in a region that doesn't support NAT gateways,
-  NAT instances are deployed instead. **WARNING** This template creates AWS resources.
-  You will be billed for the AWS resources used if you create a stack from this template.
-  QS(0027)
+  (ACLs) - (SO0051).
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -34,10 +31,6 @@ Metadata:
           - PrivateSubnet3BCIDR
           - PrivateSubnet4BCIDR
           - LogsRetentionInDays
-      - Label:
-          default: Amazon EC2 Configuration
-        Parameters:
-          - NATInstanceType
     ParameterLabels:
       AvailabilityZones:
         default: Availability Zones
@@ -47,8 +40,6 @@ Metadata:
         default: Create private subnets
       CreatePublicSubnets:
         default: Create public subnets
-      NATInstanceType:
-        default: NAT instance type
       NumberOfAZs:
         default: Number of Availability Zones
       PrivateSubnet1ACIDR:
@@ -108,19 +99,6 @@ Parameters:
     Default: 'true'
     Description: Set to false to create only private subnets. If false, the CIDR parameters
       for ALL public subnets will be ignored.
-    Type: String
-  NATInstanceType:
-    AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
-      - m3.medium
-      - m3.large
-      - m4.large
-    Default: t2.small
-    Description: Amazon EC2 instance type for the NAT instances. This is used only if the region does not support NAT gateways.
     Type: String
   NumberOfAZs:
     AllowedValues:
@@ -195,84 +173,6 @@ Parameters:
     Default: 90
     AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
 
-Mappings:
-  AWSAMIRegionMap:
-    AMI:
-      AWSNATHVM: amzn-ami-vpc-nat-hvm-2016.09.1.20170119-x86_64-ebs
-    ap-northeast-1:
-      AWSNATHVM: ami-78d6af1f
-    ap-northeast-2:
-      AWSNATHVM: ami-7ec31210
-    ap-south-1:
-      AWSNATHVM: ami-48dcaa27
-    ap-southeast-1:
-      AWSNATHVM: ami-a0903ac3
-    ap-southeast-2:
-      AWSNATHVM: ami-1e47407d
-    ca-central-1:
-      AWSNATHVM: ami-cdf24fa9
-    eu-central-1:
-      AWSNATHVM: ami-7d0ec112
-    eu-west-1:
-      AWSNATHVM: ami-47ecb121
-    eu-west-2:
-      AWSNATHVM: ami-7c959f18
-    sa-east-1:
-      AWSNATHVM: ami-f80b6e94
-    us-east-1:
-      AWSNATHVM: ami-dd3dd7cb
-    us-east-2:
-      AWSNATHVM: ami-564b6e33
-    us-west-1:
-      AWSNATHVM: ami-7d54061d
-    us-west-2:
-      AWSNATHVM: ami-3b6fd05b
-  AWSInfoRegionMap:
-    ap-northeast-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    ap-northeast-2:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    ap-south-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    ap-southeast-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    ap-southeast-2:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    ca-central-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    eu-central-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    eu-west-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    eu-west-2:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    sa-east-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    us-east-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    us-east-2:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    us-gov-west-1:
-      Partition: aws-us-gov
-      QuickStartS3URL: https://s3-us-gov-west-1.amazonaws.com
-    us-west-1:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
-    us-west-2:
-      Partition: aws
-      QuickStartS3URL: https://s3.amazonaws.com
 Conditions:
   PublicSubnetsCondition: !Equals [!Ref 'CreatePublicSubnets', 'true']
   3AZCondition: !Or [!Equals [!Ref 'NumberOfAZs', '3'], !Condition '4AZCondition']
@@ -285,17 +185,9 @@ Conditions:
     !Condition '3AZCondition']
   AdditionalPrivateSubnets&4AZCondition: !And [!Condition 'AdditionalPrivateSubnetsCondition',
     !Condition '4AZCondition']
-  NATInstanceCondition: !And [!Condition 'PrivateSubnetsCondition', !Condition 'NATInstanceRegionCondition', !Condition 'PublicSubnetsCondition']
-  NATInstanceRegionCondition: !Or [!Equals [!Ref 'AWS::Region', us-gov-west-1], !Equals [
-      !Ref 'AWS::Region', cn-north-1]]
-  NATGatewayCondition: !And [!Condition 'PrivateSubnetsCondition', !Not [!Condition 'NATInstanceRegionCondition'], !Condition 'PublicSubnetsCondition']
-  NATInstance&3AZCondition: !And [!Condition 'NATInstanceCondition', !Condition '3AZCondition']
-  NATInstance&4AZCondition: !And [!Condition 'NATInstanceCondition', !Condition '4AZCondition']
+  NATGatewayCondition: !And [!Condition 'PrivateSubnetsCondition', !Condition 'PublicSubnetsCondition']
   NATGateway&3AZCondition: !And [!Condition 'NATGatewayCondition', !Condition '3AZCondition']
   NATGateway&4AZCondition: !And [!Condition 'NATGatewayCondition', !Condition '4AZCondition']
-  NATPrivateSubnetRouteCondition: !Or [!Condition 'NATGatewayCondition', !Condition 'NATInstanceCondition']
-  NATPrivateSubnet&3AZRouteCondition: !Or [!Condition 'NATGateway&3AZCondition', !Condition 'NATInstance&3AZCondition']
-  NATPrivateSubnet&4AZRouteCondition: !Or [!Condition 'NATGateway&4AZCondition', !Condition 'NATInstance&4AZCondition']
   NVirginiaRegionCondition: !Equals [!Ref 'AWS::Region', us-east-1]
   PrivateSubnetsCondition: !Equals [!Ref 'CreatePrivateSubnets', 'true']
   PrivateSubnets&3AZCondition: !And [!Condition 'PrivateSubnetsCondition', !Condition '3AZCondition']
@@ -508,12 +400,11 @@ Resources:
         - Key: Network
           Value: Private
   PrivateSubnet1ARoute:
-    Condition: NATPrivateSubnetRouteCondition
+    Condition: NATGatewayCondition
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref 'PrivateSubnet1ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance1', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway1', !Ref 'AWS::NoValue']
   PrivateSubnet1ARouteTableAssociation:
     Condition: PrivateSubnetsCondition
@@ -532,12 +423,11 @@ Resources:
         - Key: Network
           Value: Private
   PrivateSubnet2ARoute:
-    Condition: NATPrivateSubnetRouteCondition
+    Condition: NATGatewayCondition
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref 'PrivateSubnet2ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance2', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway2', !Ref 'AWS::NoValue']
   PrivateSubnet2ARouteTableAssociation:
     Condition: PrivateSubnetsCondition
@@ -556,12 +446,11 @@ Resources:
         - Key: Network
           Value: Private
   PrivateSubnet3ARoute:
-    Condition: NATPrivateSubnet&3AZRouteCondition
+    Condition: NATGateway&3AZCondition
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref 'PrivateSubnet3ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance3', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway3', !Ref 'AWS::NoValue']
   PrivateSubnet3ARouteTableAssociation:
     Condition: PrivateSubnets&3AZCondition
@@ -580,12 +469,11 @@ Resources:
         - Key: Network
           Value: Private
   PrivateSubnet4ARoute:
-    Condition: NATPrivateSubnet&4AZRouteCondition
+    Condition: NATGateway&4AZCondition
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref 'PrivateSubnet4ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance4', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway4', !Ref 'AWS::NoValue']
   PrivateSubnet4ARouteTableAssociation:
     Condition: PrivateSubnets&4AZCondition
@@ -609,7 +497,6 @@ Resources:
     Properties:
       RouteTableId: !Ref 'PrivateSubnet1BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance1', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway1', !Ref 'AWS::NoValue']
   PrivateSubnet1BRouteTableAssociation:
     Condition: AdditionalPrivateSubnetsCondition
@@ -669,7 +556,6 @@ Resources:
     Properties:
       RouteTableId: !Ref 'PrivateSubnet2BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance2', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway2', !Ref 'AWS::NoValue']
   PrivateSubnet2BRouteTableAssociation:
     Condition: AdditionalPrivateSubnetsCondition
@@ -729,7 +615,6 @@ Resources:
     Properties:
       RouteTableId: !Ref 'PrivateSubnet3BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance3', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway3', !Ref 'AWS::NoValue']
   PrivateSubnet3BRouteTableAssociation:
     Condition: AdditionalPrivateSubnets&3AZCondition
@@ -789,7 +674,6 @@ Resources:
     Properties:
       RouteTableId: !Ref 'PrivateSubnet4BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance4', !Ref 'AWS::NoValue']
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway4', !Ref 'AWS::NoValue']
   PrivateSubnet4BRouteTableAssociation:
     Condition: AdditionalPrivateSubnets&4AZCondition
@@ -881,28 +765,24 @@ Resources:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance1', !Ref 'AWS::NoValue']
   NAT2EIP:
     Condition: Public&PrivateSubnetsCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance2', !Ref 'AWS::NoValue']
   NAT3EIP:
     Condition: Public&PrivateSubnets&3AZCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance3', !Ref 'AWS::NoValue']
   NAT4EIP:
     Condition: Public&PrivateSubnets&4AZCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
-      InstanceId: !If [NATInstanceCondition, !Ref 'NATInstance4', !Ref 'AWS::NoValue']
   NATGateway1:
     Condition: NATGatewayCondition
     DependsOn: VPCGatewayAttachment
@@ -931,165 +811,6 @@ Resources:
     Properties:
       AllocationId: !GetAtt 'NAT4EIP.AllocationId'
       SubnetId: !Ref 'PublicSubnet4'
-  NATInstance1:
-    Condition: NATInstanceCondition
-    DependsOn: VPCGatewayAttachment
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !FindInMap [AWSAMIRegionMap, !Ref 'AWS::Region', AWSNATHVM]
-      InstanceType: !Ref 'NATInstanceType'
-      Tags:
-        - Key: Name
-          Value: NAT1
-      NetworkInterfaces:
-        - GroupSet:
-            - !Ref 'NATInstanceSecurityGroup'
-          AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          DeleteOnTermination: 'true'
-          SubnetId: !Ref 'PublicSubnet1'
-      SourceDestCheck: 'false'
-      IamInstanceProfile: !Ref 'NATInstanceProfile'
-      UserData:
-        Fn::Base64:
-            !Sub |
-                #!/bin/bash -xe
-                echo Installing SSM
-                cd /tmp
-                sudo yum install -y https://s3-${AWS::Region}.amazonaws.com/amazon-ssm-${AWS::Region}/latest/linux_amd64/amazon-ssm-agent.rpm
-                sudo start amazon-ssm-agent
-  NATInstance2:
-    Condition: NATInstanceCondition
-    DependsOn: VPCGatewayAttachment
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !FindInMap [AWSAMIRegionMap, !Ref 'AWS::Region', AWSNATHVM]
-      InstanceType: !Ref 'NATInstanceType'
-      Tags:
-        - Key: Name
-          Value: NAT2
-      NetworkInterfaces:
-        - GroupSet:
-            - !Ref 'NATInstanceSecurityGroup'
-          AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          DeleteOnTermination: 'true'
-          SubnetId: !Ref 'PublicSubnet2'
-      SourceDestCheck: 'false'
-      IamInstanceProfile: !Ref 'NATInstanceProfile'
-      UserData:
-        Fn::Base64:
-            !Sub |
-                #!/bin/bash -xe
-                echo Installing SSM
-                cd /tmp
-                sudo yum install -y https://s3-${AWS::Region}.amazonaws.com/amazon-ssm-${AWS::Region}/latest/linux_amd64/amazon-ssm-agent.rpm
-                sudo start amazon-ssm-agent
-  NATInstance3:
-    Condition: NATInstance&3AZCondition
-    DependsOn: VPCGatewayAttachment
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !FindInMap [AWSAMIRegionMap, !Ref 'AWS::Region', AWSNATHVM]
-      InstanceType: !Ref 'NATInstanceType'
-      Tags:
-        - Key: Name
-          Value: NAT3
-      NetworkInterfaces:
-        - GroupSet:
-            - !Ref 'NATInstanceSecurityGroup'
-          AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          DeleteOnTermination: 'true'
-          SubnetId: !Ref 'PublicSubnet3'
-      SourceDestCheck: 'false'
-      IamInstanceProfile: !Ref 'NATInstanceProfile'
-      UserData:
-        Fn::Base64:
-            !Sub |
-                #!/bin/bash -xe
-                echo Installing SSM
-                cd /tmp
-                sudo yum install -y https://s3-${AWS::Region}.amazonaws.com/amazon-ssm-${AWS::Region}/latest/linux_amd64/amazon-ssm-agent.rpm
-                sudo start amazon-ssm-agent
-  NATInstance4:
-    Condition: NATInstance&4AZCondition
-    DependsOn: VPCGatewayAttachment
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !FindInMap [AWSAMIRegionMap, !Ref 'AWS::Region', AWSNATHVM]
-      InstanceType: !Ref 'NATInstanceType'
-      Tags:
-        - Key: Name
-          Value: NAT4
-      NetworkInterfaces:
-        - GroupSet:
-            - !Ref 'NATInstanceSecurityGroup'
-          AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          DeleteOnTermination: 'true'
-          SubnetId: !Ref 'PublicSubnet4'
-      SourceDestCheck: 'false'
-      IamInstanceProfile: !Ref 'NATInstanceProfile'
-      UserData:
-        Fn::Base64:
-            !Sub |
-                #!/bin/bash -xe
-                echo Installing SSM
-                cd /tmp
-                sudo yum install -y https://s3-${AWS::Region}.amazonaws.com/amazon-ssm-${AWS::Region}/latest/linux_amd64/amazon-ssm-agent.rpm
-                sudo start amazon-ssm-agent
-  NATInstanceSecurityGroup:
-    Condition: NATInstanceCondition
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Enables outbound internet access for the VPC via the NAT instances
-      VpcId: !Ref 'VPC'
-      SecurityGroupIngress:
-        - IpProtocol: '-1'
-          FromPort: '1'
-          ToPort: '65535'
-          CidrIp: !Ref 'VPCCIDR'
-      SecurityGroupEgress:
-        - IpProtocol: '-1'
-          FromPort: '0'
-          ToPort: '65535'
-          CidrIp: 0.0.0.0/0
-  NATInstancePatchingAssociation:
-    Type: AWS::SSM::Association
-    Properties:
-      AssociationName: NATINstancePatching
-      Name: AWS-RunPatchBaseline
-      Parameters:
-        Operation:
-          - Install
-      ScheduleExpression: rate(1 day)
-      Targets:
-        - Key: tag:aws:cloudformation:stack-name
-          Values:
-            - !Ref AWS::StackName
-  NATInstanceRole:
-      Type: AWS::IAM::Role
-      Properties:
-        AssumeRolePolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Principal:
-                Service:
-                  - ec2.amazonaws.com
-              Action:
-                - sts:AssumeRole
-        ManagedPolicyArns:
-            - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
-  NATInstanceProfile:
-    Condition: NATInstanceCondition
-    Type: "AWS::IAM::InstanceProfile"
-    Properties:
-      Path: "/"
-      Roles:
-        -
-          !Ref 'NATInstanceRole'
   S3VPCEndpoint:
     Condition: S3VPCEndpointCondition
     Type: AWS::EC2::VPCEndpoint

@@ -4,22 +4,6 @@
     "ParameterValue": "CloudTrail/Landing-Zone-Logs"
   },
   {
-    "ParameterKey": "LogsRetentionInDays",
-    "ParameterValue": "14"
-  },
-  {
-    "ParameterKey": "AlarmNotificationTopic",
-    "ParameterValue": "$[alfred_ssm_/org/primary/sns_notification_arn]"
-  },
-  {
-    "ParameterKey": "NotifyDisplayName",
-    "ParameterValue": "LZNotify"
-  },
-  {
-    "ParameterKey": "NotifyTopicName",
-    "ParameterValue": "AWS-Landing-Zone-Security-Notifications"
-  },
-  {
     "ParameterKey": "EnableSecurityGroupChangeAlarm",
     "ParameterValue": "true"
   },
@@ -64,7 +48,7 @@
     "ParameterValue": "true"
   },
   {
-    "ParameterKey": "EnableConfigRuleComplianceChangeAlarm",
-    "ParameterValue": "true"
+    "ParameterKey": "SNSNotificationTopic",
+    "ParameterValue": "/org/member/local_sns_arn"
   }
 ]

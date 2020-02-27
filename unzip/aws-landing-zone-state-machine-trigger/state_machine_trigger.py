@@ -18,6 +18,8 @@ import zipfile
 import tempfile
 import jinja2
 import uuid
+import shutil
+import errno
 
 log_level = os.environ['log_level']
 wait_time = os.environ['wait_time']
@@ -46,7 +48,7 @@ class StateMachineTriggerLambda(object):
             self.isSequential = True
         else:
             self.isSequential = False
-        self.index = 0
+        self.index = 100
         self.primary_account_id = primary_account_id
 
     def _transform_params(self, params_in):
@@ -84,15 +86,34 @@ class StateMachineTriggerLambda(object):
             raise Exception("Expecting a list of state machine execution ARNs to store in SSM for token:{}, but found nothing to store.".format(self.token))
 
     def _stage_template(self, relative_template_path):
-        local_file = os.path.join(self.manifest_folder, relative_template_path)
-        remote_file = "{}/{}_{}".format(TEMPLATE_KEY_PREFIX, self.token, relative_template_path[relative_template_path.rfind('/')+1:])
-        logger.info("Uploading the template file: {} to S3 bucket: {} and key: {}".format(local_file, self.staging_bucket, remote_file))
-        self.s3.upload_file(self.staging_bucket, local_file, remote_file)
-        s3_url = "{}{}{}{}".format('https://s3.amazonaws.com/', self.staging_bucket, '/', remote_file)
+        if relative_template_path.lower().startswith('s3'):
+            # Convert the remote template URL s3://bucket-name/object
+            # to Virtual-hosted style URL https://bucket-name.s3.amazonaws.com/object
+            t = relative_template_path.split("/", 3)
+            s3_url = "https://{}.s3.amazonaws.com/{}".format(t[2], t[3])
+        else:
+            local_file = os.path.join(self.manifest_folder, relative_template_path)
+            remote_file = "{}/{}_{}".format(TEMPLATE_KEY_PREFIX, self.token, relative_template_path[relative_template_path.rfind('/')+1:])
+            logger.info("Uploading the template file: {} to S3 bucket: {} and key: {}".format(local_file, self.staging_bucket, remote_file))
+            self.s3.upload_file(self.staging_bucket, local_file, remote_file)
+            s3_url = "{}{}{}{}".format('https://s3.amazonaws.com/', self.staging_bucket, '/', remote_file)
         return s3_url
 
+    def _download_remote_file(self, remote_s3_path):
+        _file = tempfile.mkstemp()[1]
+        t = remote_s3_path.split("/", 3) # s3://bucket-name/key
+        remote_bucket = t[2] # Bucket name
+        remote_key = t[3] # Key
+        logger.info("Downloading {}/{} from S3 to {}".format(remote_bucket, remote_key, _file))
+        self.s3.download_file(remote_bucket, remote_key, _file)
+        return _file
+
     def _load_policy(self, relative_policy_path):
-        policy_file = os.path.join(self.manifest_folder, relative_policy_path)
+        if relative_policy_path.lower().startswith('s3'):
+            policy_file = self._download_remote_file(relative_policy_path)
+        else:
+            policy_file = os.path.join(self.manifest_folder, relative_policy_path)
+
         logger.info("Parsing the policy file: {}".format(policy_file))
 
         with open(policy_file, 'r') as content_file:
@@ -104,7 +125,11 @@ class StateMachineTriggerLambda(object):
         return policy_file_content.replace('"', '\"').replace('\n', '\r\n')
 
     def _load_params(self, relative_parameter_path, account = None, region = None):
-        parameter_file = os.path.join(self.manifest_folder, relative_parameter_path)
+        if relative_parameter_path.lower().startswith('s3'):
+            parameter_file = self._download_remote_file(relative_parameter_path)
+        else:
+            parameter_file = os.path.join(self.manifest_folder, relative_parameter_path)
+
         logger.info("Parsing the parameter file: {}".format(parameter_file))
 
         with open(parameter_file, 'r') as content_file:
@@ -116,6 +141,19 @@ class StateMachineTriggerLambda(object):
 
         logger.info("Input Parameters for State Machine: {}".format(sm_params))
         return sm_params
+
+    def _load_template_rules(self, relative_rules_path):
+        rules_file = os.path.join(self.manifest_folder, relative_rules_path)
+        logger.info("Parsing the template rules file: {}".format(rules_file))
+
+        with open(rules_file, 'r') as content_file:
+            rules_file_content = content_file.read()
+
+        rules = json.loads(rules_file_content)
+
+        logger.info("Template Constraint Rules for State Machine: {}".format(rules))
+
+        return rules
 
     def _populate_ssm_params(self, sm_input):
         # The scenario is if you have one core resource that exports output from CFN stack to SSM parameter
@@ -229,24 +267,28 @@ class StateMachineTriggerLambda(object):
             j2loader = jinja2.FileSystemLoader(self.manifest_folder)
             j2env = jinja2.Environment(loader=j2loader)
             j2template = j2env.get_template(product.skeleton_file)
+            template_url = None
             if product.product_type.lower() == 'baseline':
-                j2result = j2template.render(manifest=self.manifest, portfolio_index=portfolio_index,
-                                             product_index=product_index, lambda_arn=lambda_arn, uuid=uuid.uuid4(),
-                                             regions=region_list)
+                # j2result = j2template.render(manifest=self.manifest, portfolio_index=portfolio_index,
+                #                              product_index=product_index, lambda_arn=lambda_arn, uuid=uuid.uuid4(),
+                #                              regions=region_list)
+                template_url = self._stage_template(product.skeleton_file+".template")
             elif product.product_type.lower() == 'optional':
                 if len(product.template_file) > 0:
                     template_url = self._stage_template(product.template_file)
                     j2result = j2template.render(manifest=self.manifest, portfolio_index=portfolio_index,
                                                  product_index=product_index, lambda_arn=lambda_arn, uuid=uuid.uuid4(),
                                                  template_url=template_url)
+                    generated_avm_template = os.path.join(self.manifest_folder,
+                                                          product.skeleton_file + ".generated.template")
+                    logger.info("Writing the generated product template to {}".format(generated_avm_template))
+                    with open(generated_avm_template, "w") as fh:
+                        fh.write(j2result)
+                    template_url = self._stage_template(generated_avm_template)
                 else:
                     raise Exception("Missing template_file location for portfolio:{} and product:{} in Manifest file".format(portfolio.name,
                                                                                                                              product.name))
-            generated_avm_template = os.path.join(self.manifest_folder, product.skeleton_file+".generated.template")
-            logger.info("Writing the generated product template to {}".format(generated_avm_template))
-            with open(generated_avm_template, "w") as fh:
-                fh.write(j2result)
-            template_url = self._stage_template(generated_avm_template)
+
         else:
             raise Exception("Missing skeleton_file for portfolio:{} and product:{} in Manifest file".format(portfolio.name,
                                                                                                                      product.name))
@@ -256,6 +298,13 @@ class StateMachineTriggerLambda(object):
         artifact_params.update({'Type':'CLOUD_FORMATION_TEMPLATE'})
         artifact_params.update({'Description':product.description})
         sc_product.update({'ProvisioningArtifactParameters':artifact_params})
+
+        try:
+            if product.rules_file:
+                rules = self._load_template_rules(product.rules_file)
+                sc_product.update({'Rules': rules})
+        except Exception as e:
+            logger.error(e)
 
         input_params.update({'SCPortfolio':sc_portfolio})
         input_params.update({'SCProduct':sc_product})
@@ -276,7 +325,7 @@ class StateMachineTriggerLambda(object):
         # If Sequential, kick off the first SM, and save the state machine input JSON
         # for the rest in SSM parameter store under /job_id/0 tree
         if self.isSequential:
-            if self.index == 0:
+            if self.index == 100:
                 sm_input = self._populate_ssm_params(sm_input)
                 sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
                 list_sm_exec_arns.append(sm_exec_arn)
@@ -318,9 +367,9 @@ class StateMachineTriggerLambda(object):
             logger.info("Setting the lock_down_stack_sets_role={}".format(self.manifest.lock_down_stack_sets_role))
 
             if self.manifest.lock_down_stack_sets_role is True:
-                self.ssm.put_parameter('lock_down_stack_sets_role', 'yes')
+                self.ssm.put_parameter('lock_down_stack_sets_role_flag', 'yes')
             else:
-                self.ssm.put_parameter('lock_down_stack_sets_role', 'no')
+                self.ssm.put_parameter('lock_down_stack_sets_role_flag', 'no')
 
             # Send metric - pipeline run count
             data = {"PipelineRunCount": "1"}
@@ -558,12 +607,13 @@ class StateMachineTriggerLambda(object):
                     else:
                         self.ssm.delete_parameter(self.token)
                         self.ssm.delete_parameters_by_path(self.token)
-                        err_msg = "State Machine Execution Failed, please check the Step function console for State Machine Exeuction ARN: {}".format(sm_exec_arn)
+                        err_msg = "State Machine Execution Failed, please check the Step function console for State Machine Execution ARN: {}".format(sm_exec_arn)
                         return 'FAILED', err_msg
 
                 if self.isSequential:
-                    params_list = self.ssm.get_parameters_by_path(self.token)
-                    if params_list:
+                    _params_list = self.ssm.get_parameters_by_path(self.token)
+                    if _params_list:
+                        params_list = sorted(_params_list, key=lambda i: i['Name'])
                         sm_input = json.loads(params_list[0].get('Value'))
                         if self.pipeline_stage == 'core_accounts':
                             sm_arn = self.sm_arns_map.get('account')
@@ -626,13 +676,12 @@ def get_state_machine_arns():
     return sm_arns
 
 
-def get_manifest_file_path(artifact_name):
+def get_manifest_file_path(artifact_name, temp_dir):
     try:
         logger.info("Downloading the artifact from Pipeline S3 Artifact bucket: {}".format(artifact_name))
         artifact_bucket_creds =  pipeline.get_credentials()
         artifact_bucket, artifact_key = pipeline.get_artifact_location(artifact_name)
 
-        temp_dir = tempfile.mkdtemp()
         temp_zip_file = os.path.join(temp_dir,"lz-config.zip")
         s3 = S3(logger, credentials=artifact_bucket_creds)
         s3.download_file(artifact_bucket, artifact_key, temp_zip_file)
@@ -640,8 +689,16 @@ def get_manifest_file_path(artifact_name):
         with zipfile.ZipFile(temp_zip_file, 'r') as zip:
             zip.extractall(temp_dir)
 
-        mf_file_path = os.path.join(temp_dir,"manifest.yaml")
-        return mf_file_path
+        mf_file_path = os.path.join(temp_dir, MANIFEST_FILE_NAME)
+
+        if os.path.isfile(mf_file_path):
+            return mf_file_path
+        else:
+            mf_file_path = os.path.join(temp_dir, "aws-landing-zone-configuration", MANIFEST_FILE_NAME)
+            if os.path.isfile(mf_file_path):
+                return mf_file_path
+            else:
+                raise Exception("manifest.yaml does not exist at the root level of aws-landing-zone-configuration.zip or inside aws-landing-zone-configuration folder, please check the ZIP file.")
     except Exception as e:
         message = {'FILE': __file__.split('/')[-1], 'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
         logger.exception(message)
@@ -650,6 +707,7 @@ def get_manifest_file_path(artifact_name):
 
 def lambda_handler(event, context):
     pipeline.parse_event(event)
+    temp_dir = tempfile.mkdtemp()
 
     try:
         logger.info("State Machine Trigger Lambda_handler Event: {}".format(event))
@@ -660,7 +718,7 @@ def lambda_handler(event, context):
         pipeline_user_params = pipeline.get_user_params()
         logger.info("Pipeline User Parameters: {}".format(pipeline_user_params))
         artifact_name = pipeline_user_params.get('artifact')
-        mf_file_path = get_manifest_file_path(artifact_name)
+        mf_file_path = get_manifest_file_path(artifact_name, temp_dir)
         exec_mode = pipeline_user_params.get('exec_mode', 'sequential')
 
         sm_trigger_lambda = StateMachineTriggerLambda(logger, get_state_machine_arns(), get_env_var('staging_bucket'),
@@ -683,3 +741,9 @@ def lambda_handler(event, context):
         message = {'FILE': __file__.split('/')[-1], 'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
         logger.exception(message)
         pipeline.put_job_failure(str(message))
+    finally:
+        try:
+            shutil.rmtree(temp_dir)  # delete directory
+        except OSError as exc:
+            if exc.errno != errno.ENOENT:  # ENOENT - no such file or directory
+                raise

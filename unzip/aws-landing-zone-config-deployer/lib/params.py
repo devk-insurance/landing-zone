@@ -20,7 +20,10 @@ class ParamsHandler(object):
         return str[len(search_str):]
 
     def _get_ssm_params(self, ssm_parm_name):
-        return self.ssm.get_parameter(ssm_parm_name)
+        try:
+            return self.ssm.get_parameter(ssm_parm_name)
+        except Exception as e:
+            raise Exception("Missing SSM parameter value for: {} in the SSM Parameter Store.".format(ssm_parm_name))
 
     def _get_kms_key_id(self):
         alias_name = environ.get('kms_key_alias_name')

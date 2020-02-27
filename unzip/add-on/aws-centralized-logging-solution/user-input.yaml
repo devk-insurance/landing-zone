@@ -1,0 +1,17 @@
+input_parameters:
+  - file_name: add_on_manifest.yaml
+    parameters:
+      core_ou: {{ core_ou }}
+      core_account: {{ core_account }}
+      region: {{ region }}
+      avm_products: {{ avm_products }}
+      spoke_regions: {{ spoke_regions }}
+  - file_name: parameters/core_accounts/aws-landing-zone-centralized-logging-primary.json
+    parameters:
+      domain_name: {{ domain_name }}
+      domain_admin_email: {{ domain_admin_email }}
+      cognito_admin_email: {{ cognito_admin_email }}
+      cluster_size: {{ cluster_size }}
+  - file_name: parameters/aws_baseline/aws-landing-zone-centralized-logging-spoke.json
+    parameters:
+      cloud_trail_region: {{ cloud_trail_region }}

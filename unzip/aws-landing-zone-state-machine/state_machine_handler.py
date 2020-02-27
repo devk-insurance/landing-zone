@@ -32,7 +32,6 @@ import time
 import os
 import json
 from lib.helper import sanitize
-from lib.scp import ServiceControlPolicy
 
 
 class CloudFormation(object):
@@ -246,20 +245,24 @@ class CloudFormation(object):
             raise
 
     def _get_ssm_secure_string(self, parameters):
-        ssm = SSM(self.logger)
-        # Get secure string from SSM Parameter Store
+        if parameters.get('ALZRegion'):
+            ssm = SSM(self.logger, parameters.get('ALZRegion'))
+        else:
+            ssm = SSM(self.logger)
+
         self.logger.info("Updating Parameters")
         self.logger.info(parameters)
         copy = parameters.copy()
         for key, value in copy.items():
             if type(value) is str and value.startswith('_get_ssm_secure_string_'):
                 ssm_param_key = value[len('_get_ssm_secure_string_'):]
-                self.logger.info(ssm_param_key)
                 decrypted_value = ssm.get_parameter(ssm_param_key)
-                self.logger.info(decrypted_value)
                 copy.update({key: decrypted_value})
-        self.logger.info("Updated Parameters")
-        self.logger.info(copy)
+            elif type(value) is str and value.startswith('_alfred_decapsulation_'):
+                decapsulated_value = value[(len('_alfred_decapsulation_')+1):]
+                self.logger.info("Removing decapsulation header. Printing decapsulated value below:")
+                self.logger.info(decapsulated_value)
+                copy.update({key: decapsulated_value})
         return copy
 
     def create_stack_set(self):
@@ -792,24 +795,24 @@ class Organizations(object):
             # Unlock the account if invoked from Codepipeline
             if response_url:
                 ssm = SSM(self.logger)
-                ssm_key = 'lock_down_stack_sets_role'
-                flag = None
-                self.logger.info("Looking up values in SSM parameter:{}".format(ssm_key))
-                existing_param = ssm.describe_parameters(ssm_key)
+                ssm_flag_key = 'lock_down_stack_sets_role_flag'
+                self.logger.info("Looking up values in SSM parameter:{}".format(ssm_flag_key))
+                existing_param = ssm.describe_parameters(ssm_flag_key)
 
+                principal_arns = environ.get('unlock_role_arns')
                 if existing_param:
-                    flag = ssm.get_parameter(ssm_key)
-                    self.logger.info("Found SSM parameter: {} with value:{}".format(ssm_key, flag))
-                else:
-                    self.logger.error("Missing SSM parameter: {}, assuming the value to be 'yes'".format(ssm_key, flag))
-
-                if flag:
+                    flag = ssm.get_parameter(ssm_flag_key)
+                    self.logger.info("Found SSM parameter: {} with value:{}".format(ssm_flag_key, flag))
                     if flag.lower() == 'yes':
-                        principal_arns = environ.get('lock_down_role_arns')
-                    else:
-                        principal_arns = environ.get('unlock_role_arns')
-                else:
-                    principal_arns = environ.get('lock_down_role_arns')
+                        ssm_roles_key = environ.get('ssm_key_for_lock_down_role_arns')
+                        existing_param = ssm.describe_parameters(ssm_roles_key, begins_with=True)
+                        if existing_param:
+                            role_arns_list = ssm.get_parameters_by_path(ssm_roles_key)
+                            self.logger.info("role_arns_list = {}".format(role_arns_list))
+                            principal_arns = ''
+                            for role_arn in role_arns_list:
+                                principal_arns = role_arn.get('Value') + ',' + principal_arns
+                            principal_arns = principal_arns[:-1]
 
                 self._update_child_account_trust_relationship(account, principal_arns)
                 self.event.update({'AssumeRolePolicyUpdated': "yes"})
@@ -1208,6 +1211,53 @@ class ServiceCatalog(object):
             gf.send_failure_to_cfn()
             raise
 
+    def list_template_constraints_for_portfolio(self):
+        try:
+            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
+            self.logger.info(self.params)
+            product_id = self.event.get('ProductId')
+            portfolio_id = self.event.get('PortfolioId')
+            sc = SC(self.logger)
+
+            self.logger.info("Product ID: {} ; Portfolio ID: {}".format(product_id, portfolio_id))
+            # checking if there are no product ID in the event
+            if product_id is None:
+                self.logger.info("Product not associated - empty list")
+                value = 'no'
+                self.event.update({'TemplateConstraintExist': value})
+                return self.event
+
+            # Listing portfolio for the product
+            self.logger.info("List constraint for the portfolio")
+            response = sc.list_constraints_for_portfolio(product_id, portfolio_id)
+            self.logger.info("List Constraint Response")
+            self.logger.info(response)
+            value = None
+            constraints = response.get('ConstraintDetails')
+            if constraints:
+                for constraint in constraints:
+                    self.logger.info(constraint)
+                    if constraint.get('Type') == 'TEMPLATE':
+                        value = 'yes'
+                        self.event.update({'TemplateConstraintExist': value})
+                        self.event.update({'ConstraintId': constraint.get('ConstraintId')})
+                        return self.event
+                    else:
+                        self.logger.info("Template Type Constraint not found in the list.")
+                        value = 'no'
+            else:
+                self.logger.info("Template Type Constraint not found - empty list")
+                value = 'no'
+            self.event.update({'TemplateConstraintExist': value})
+            return self.event
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            gf = GeneralFunctions(self.event, self.logger)
+            gf.send_failure_to_cfn()
+            raise
+
     def create_constraint(self):
         try:
             self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
@@ -1221,6 +1271,50 @@ class ServiceCatalog(object):
             description = "Constraint for Product ID: {}".format(product_id)
             self.logger.info("Creating constraint for product id: {}".format(product_id))
             response = sc.create_constraint(product_id, portfolio_id, dumps(parameter), description)
+            self.logger.info("Response from create_constraint")
+            self.logger.info(response)
+            constraint_id = response.get('ConstraintDetail', {}).get('ConstraintId')
+            self.event.update({'ConstraintId': constraint_id})
+            return self.event
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            gf = GeneralFunctions(self.event, self.logger)
+            gf.send_failure_to_cfn()
+            raise
+
+    def check_rules_exist(self):
+        try:
+            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
+            self.logger.info(self.params)
+            product_event = self.params.get('SCProduct')
+            if product_event.get('Rules'):
+                self.event.update({'RulesExist': 'yes'})
+            else:
+                self.event.update({'RulesExist': 'no'})
+            return self.event
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            gf = GeneralFunctions(self.event, self.logger)
+            gf.send_failure_to_cfn()
+            raise
+
+    def create_template_constraint(self):
+        try:
+            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
+            self.logger.info(self.params)
+            product_event = self.params.get('SCProduct')
+            product_id = self.event.get('ProductId')
+            portfolio_id = self.event.get('PortfolioId')
+            sc = SC(self.logger)
+            # Create constraint for this product
+            parameter = {"Rules": product_event.get('Rules')}
+            description = "Constraint for Product ID: {}".format(product_id)
+            self.logger.info("Creating constraint for product id: {}".format(product_id))
+            response = sc.create_constraint(product_id, portfolio_id, dumps(parameter), description, 'TEMPLATE')
             self.logger.info("Response from create_constraint")
             self.logger.info(response)
             constraint_id = response.get('ConstraintDetail', {}).get('ConstraintId')
@@ -1253,6 +1347,34 @@ class ServiceCatalog(object):
                 self.logger.info("Role ARN did not match: updated required.")
                 value = 'no'
             self.event.update({'RoleArnMatched': value})
+            return self.event
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            gf = GeneralFunctions(self.event, self.logger)
+            gf.send_failure_to_cfn()
+            raise
+
+    def describe_template_constraint(self):
+        try:
+            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
+            self.logger.info(self.params)
+            constraint_id = self.event.get('ConstraintId')
+            sc = SC(self.logger)
+            product_event = self.params.get('SCProduct')
+            self.logger.info("Describe constraint for the portfolio")
+            response = sc.describe_constraint(constraint_id)
+            self.logger.info("Describe Constraint Response")
+            self.logger.info(response)
+            rules = loads(response.get("ConstraintParameters")).get('Rules')
+            if product_event.get('Rules') == rules:
+                self.logger.info("Template Rules matched: skip to next state")
+                value = 'yes'
+            else:
+                self.logger.info("Template Rules did not match: updated required.")
+                value = 'no'
+            self.event.update({'RulesMatched': value})
             return self.event
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
@@ -1666,17 +1788,23 @@ class ServiceCatalog(object):
                 if stacks is not None and type(stacks) is list:
                     for stack in stacks:
                         parameters = stack.get('Parameters')
+                        found_provisioned_product = False
 
                         if parameters is not None and type(parameters) is list:
                             for parameter in parameters:
-                                if parameter.get('ParameterKey') == 'AccountEmail' and \
-                                        parameter.get('ParameterValue') == account_email:
-                                    self.logger.info("Found the provisioned product with AccountEmail={}"
-                                                     .format(account_email))
+                                if parameter.get('ParameterKey') == 'AccountEmail' and parameter.get('ParameterValue') == account_email:
+                                    self.logger.info("Found the provisioned product with AccountEmail={}".format(account_email))
                                     self.event.update({'ProvisionedProductId': provisioned_product_id})
                                     self.event.update({'ProvisionedProductExists': True})
                                     self.event.update({'NextPageToken': 'Complete'})
-                                    return self.event
+                                    found_provisioned_product = True
+
+                            if found_provisioned_product:
+                                existing_parameter_keys = []
+                                for parameter in parameters:
+                                    existing_parameter_keys.append(parameter.get('ParameterKey'))
+                                self.event.update({'ExistingParameterKeys': existing_parameter_keys})
+                                return self.event
 
             if response.get('NextPageToken') is None:
                 self.event.update({'NextPageToken': 'Complete'})
@@ -1703,13 +1831,17 @@ class ServiceCatalog(object):
             product_id = self.event.get('ProductId')
             artifact_id = self.event.get('ProvisioningArtifactId')
             product_params = self.event.get('ProdParams')
+            existing_parameter_keys = self.event.get('ExistingParameterKeys')
 
             params_list = []
             for key, value in product_params.items():
                 param = {}
                 value = "Primary" if key == 'AccountName' and value == "" else value
                 param.update({"Key": key})
-                param.update({"UsePreviousValue": True})
+                if key in existing_parameter_keys:
+                    param.update({"UsePreviousValue": True})
+                else:
+                    param.update({"Value": value})
                 params_list.append(param)
 
             self.logger.info("params_list={}".format(params_list))
@@ -2013,17 +2145,23 @@ class ADConnector(object):
         self.logger.info("AD Connector Event")
         self.logger.info(event)
 
+    def _get_password(self, region, encapsulated_ssm_key):
+        # instantiate SSM class using temporary security credentials
+        ssm = SSM(self.logger, region)
+        ssm_key = encapsulated_ssm_key[len('_get_ssm_secure_string_'):]
+        decrypted_value = ssm.get_parameter(ssm_key)
+        return decrypted_value
+
     def create_ad_connector(self):
         try:
             ds = DirectoryService(self.logger)
-            ssm = SSM(self.logger)
-
             dns_name = self.params.get('DomainDNSName')
             netbios_name = self.params.get('DomainNetBIOSName')
             user = self.params.get('ConnectorUserName')
-            # password_key = self.params.get('ConnectorPasswordKey')
-            # password = ssm.get_parameter(password_key)
-            password = self.params.get('ConnectorPassword')
+            # get secure_string from ssm in home region
+            encap_ssm_key = self.params.get('ConnectorPassword')
+            home_region = self.params.get('ALZRegion')
+            password = self._get_password(home_region, encap_ssm_key)
             size = self.params.get('ADConnectorSize')
             vpc_id = self.params.get('VPCId')
             subnet_ids = [self.params.get('Subnet1Id'), self.params.get('Subnet2Id')]
@@ -2368,8 +2506,5 @@ class GeneralFunctions(object):
             data = {"StateMachineExecutionCount": "1"}
             send.metrics(data)
             return self.event
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
+        except:
+            return self.event

@@ -1,0 +1,68 @@
+---
+
+# Landing Zone Core Account Structure
+organizational_units:
+  # Landing Zone OU for Core accounts
+  - name: {{ core_ou }}
+    core_accounts:
+      # {{ core_account }} account
+      - name: {{ core_account }}
+        core_resources:
+          - name: SharedServicesActiveDirectory
+            template_file: templates/core_accounts/aws-landing-zone-aws-active-directory.template
+            parameter_file: parameters/core_accounts/aws-landing-zone-aws-active-directory.json
+            deploy_method: stack_set
+            regions:
+              - {{ ad_region }}
+            ssm_parameters:
+              - name: /org/directory_service/ad_server1_private_ip
+                value: $[output_ADServer1PrivateIP]
+              - name: /org/directory_service/ad_server2_private_ip
+                value: $[output_ADServer2PrivateIP]
+              - name: /org/directory_service/domain_dns_name
+                value: $[output_DomainDNSName]
+              - name: /org/directory_service/domain_netbios_name
+                value: $[output_DomainNetBIOSName]
+              - name: /org/directory_service/domain_admin_user
+                value: $[output_DomainAdmin]
+              - name: /org/directory_service/domain_member_sg_id
+                value: $[output_DomainMemberSGID]
+          - name: SharedServicesRDGW
+            template_file: templates/core_accounts/aws-landing-zone-rdgw.template
+            parameter_file: parameters/core_accounts/aws-landing-zone-rdgw.json
+            deploy_method: stack_set
+            regions:
+              - {{ ad_region }}
+            ssm_parameters:
+              - name: /org/member/sharedservices/rdgw_ip1
+                value: $[output_EIP1]
+      # Primary account
+      - name: primary
+        core_resources:
+          - name: PrimaryAccountVPC
+            template_file: templates/aws_baseline/aws-landing-zone-vpc.template
+            parameter_file: parameters/core_accounts/aws-landing-zone-primary-account-vpc.json
+            deploy_method: stack_set
+            regions:
+              - {{ ad_conn_region }}
+            ssm_parameters:
+              - name: /org/primary/vpc_cidr
+                value: $[output_VPCCIDR]
+              - name: /org/primary/vpc_id
+                value: $[output_VPCID]
+              - name: /org/primary/private_subnet1_cidr
+                value: $[output_PrivateSubnet1ACIDR]
+              - name: /org/primary/private_subnet1_id
+                value: $[output_PrivateSubnet1AID]
+              - name: /org/primary/private_subnet2_cidr
+                value: $[output_PrivateSubnet2ACIDR]
+              - name: /org/primary/private_subnet2_id
+                value: $[output_PrivateSubnet2AID]
+              - name: /org/primary/vpc_private_route_ids
+                value: $[output_PrivateSubnetRouteTables]
+          - name: PrimaryADConnector
+            template_file: templates/core_accounts/aws-landing-zone-aws-ad-connector.template
+            parameter_file: parameters/core_accounts/aws-landing-zone-aws-ad-connector.json
+            deploy_method: stack_set
+            regions:
+              - {{ ad_conn_region }}

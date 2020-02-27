@@ -26,5 +26,25 @@
   {
       "ParameterKey": "BucketName",
       "ParameterValue": "$[alfred_ssm_/org/member/logging/bucket_name]"
+  },
+  {
+    "ParameterKey": "NotifyDisplayName",
+    "ParameterValue": "LZNotify"
+  },
+  {
+    "ParameterKey": "NotifyTopicName",
+    "ParameterValue": "AWS-Landing-Zone-Security-Notification"
+  },
+  {
+    "ParameterKey": "LogsRetentionInDays",
+    "ParameterValue": "14"
+  },
+  {
+    "ParameterKey": "EnableConfigRuleComplianceChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "SecurityNotificationTopicArn",
+    "ParameterValue": "$[alfred_ssm_/org/primary/sns_notification_arn]"
   }
 ]

@@ -1,0 +1,26 @@
+input_parameters:
+  - file_name: add_on_manifest.yaml
+    parameters:
+      core_ou: {{ core_ou }}
+      core_account: {{ core_account }}
+      ad_region: {{ ad_region }}
+      ad_conn_region: {{ ad_conn_region }}
+  - file_name: parameters/core_accounts/aws-landing-zone-aws-active-directory.json
+    parameters:
+      domain_dns_name: {{ domain_dns_name }}
+      domain_net_bios_name: {{ domain_net_bios_name }}
+  - file_name: parameters/core_accounts/aws-landing-zone-rdgw.json
+    parameters:
+      no_of_rdgw_hosts: {{ no_of_rdgw_hosts }}
+      rdgw_instance_type: {{ rdgw_instance_type }}
+      rdgw_cidr: {{ rdgw_cidr }}
+      password_never_expires: {{ password_never_expires }}
+  - file_name: parameters/core_accounts/aws-landing-zone-primary-account-vpc.json
+    parameters:
+      private_subnet1a_cidr: {{ private_subnet1a_cidr }}
+      private_subnet2a_cidr: {{ private_subnet2a_cidr }}
+      vpc_cidr: {{ vpc_cidr }}
+      logs_retention_in_days: {{ logs_retention_in_days }}
+  - file_name: parameters/core_accounts/aws-landing-zone-aws-ad-connector.json
+    parameters:
+      alz_region: {{ alz_region }}

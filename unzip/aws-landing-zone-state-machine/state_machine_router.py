@@ -109,8 +109,14 @@ def service_catalog(event, function_name):
         response = sc.associate_product_with_portfolio()
     elif function_name == 'create_constraint':
         response = sc.create_constraint()
+    elif function_name == 'check_rules_exist':
+        response = sc.check_rules_exist()
+    elif function_name == 'create_template_constraint':
+        response = sc.create_template_constraint()
     elif function_name == 'describe_constraint':
         response = sc.describe_constraint()
+    elif function_name == 'describe_template_constraint':
+        response = sc.describe_template_constraint()
     elif function_name == 'delete_constraint':
         response = sc.delete_constraint()
     elif function_name == 'update_product':
@@ -121,6 +127,8 @@ def service_catalog(event, function_name):
         response = sc.list_portfolios_for_product()
     elif function_name == 'list_constraints_for_portfolio':
         response = sc.list_constraints_for_portfolio()
+    elif function_name == 'list_template_constraints_for_portfolio':
+        response = sc.list_template_constraints_for_portfolio()
     elif function_name == 'list_principals_for_portfolio':
         response = sc.list_principals_for_portfolio()
     elif function_name == 'disassociate_product_from_portfolio':

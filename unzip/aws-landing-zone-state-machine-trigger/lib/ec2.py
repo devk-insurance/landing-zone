@@ -53,6 +53,9 @@ class EC2(object):
             if e.response['Error']['Code'] == 'OptInRequired':
                 self.logger.info("Caught exception 'OptInRequired', handling the exception...")
                 return {"Error": "OptInRequired"}
+            elif e.response['Error']['Code'] == 'AuthFailure':
+                self.logger.info("Ignoring AuthFailure for the new region(s)")
+                return {"Error": "OptInRequired"}
             else:
                 message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                            'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
@@ -90,7 +93,7 @@ class EC2(object):
             self.logger.exception(message)
             raise
 
-    def delete_subnet(self,subnet_id):
+    def delete_subnet(self, subnet_id):
         try:
             response = self.ec2_client.delete_subnet(
                 SubnetId=subnet_id
@@ -168,18 +171,35 @@ class EC2(object):
             self.logger.exception(message)
             raise
 
-    def create_vpc_peering_connection(self, peer_vpc_id, vpc_id, peer_owner_id=None, peer_region=None):
+    def create_vpc_peering_connection(self, accepter_account_id, accepter_vpc_id, requester_vpc_id, accepter_region):
         try:
-            kwargs = {
-                      'PeerVpcId': peer_vpc_id,
-                      'VpcId': vpc_id
-                    }
-            if peer_region is not None:
-                kwargs['PeerRegion'] = peer_region
-            if peer_owner_id is not None:
-                kwargs['PeerOwnerId'] = peer_owner_id
-            response = self.ec2_client.create_vpc_peering_connection(**kwargs)
+            response = self.ec2_client.create_vpc_peering_connection(
+                PeerOwnerId = accepter_account_id,
+                PeerVpcId = accepter_vpc_id,
+                VpcId = requester_vpc_id,
+                PeerRegion = accepter_region
+            )
             return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    def vpc_peering_connection_wait_until_exists(self, vpc_peering_connection_id):
+        try:
+            ec2 = boto3.resource('ec2')
+            vpc_peering_connection = ec2.VpcPeeringConnection(vpc_peering_connection_id)
+            vpc_peering_connection.wait_until_exists(
+                Filters=[
+                    {
+                        'Name': 'vpc-peering-connection-id',
+                        'Values': [
+                            vpc_peering_connection_id
+                        ]
+                    }
+                ]
+            )
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
@@ -233,11 +253,15 @@ class EC2(object):
                 ],
             )
             return response
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'InvalidVpcPeeringConnectionID.NotFound':
+                self.logger.info("Caught exception 'InvalidVpcPeeringConnectionID NotFound, handling the exception...")
+                return {"Error": "VpcPeeringConnectionIdNotFound"}
+            else:
+                message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                           'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                self.logger.exception(message)
+                raise
 
     def delete_vpc_peering_connection(self, vpc_peering_connection_id):
         try:
@@ -284,6 +308,24 @@ class EC2(object):
                 DestinationCidrBlock=vpc_cidr,
                 RouteTableId=route_table_id,
                 VpcPeeringConnectionId=peer_connection_id
+                )
+            return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    def describe_route_tables(self, route_table_id, peer_connection_id):
+        try:
+            response = self.ec2_client.describe_route_tables(
+                Filters=[
+                            {
+                                'Name': 'route.vpc-peering-connection-id',
+                                'Values': [peer_connection_id]
+                            }
+                        ],
+                RouteTableIds=[route_table_id]
                 )
             return response
         except Exception as e:

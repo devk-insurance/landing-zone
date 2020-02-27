@@ -1,0 +1,34 @@
+[
+  {
+    "ParameterKey": "DOMAINNAME",
+    "ParameterValue": {{ domain_name }}
+  },
+  {
+    "ParameterKey": "DomainAdminEmail",
+    "ParameterValue": {{ domain_admin_email }}
+  },
+  {
+    "ParameterKey": "OrgID",
+    "ParameterValue": "$[alfred_ssm_/org/primary/organization_id]"
+  },
+  {
+      "ParameterKey": "CognitoAdminEmail",
+      "ParameterValue": {{ cognito_admin_email }}
+  },
+  {
+    "ParameterKey": "ClusterSize",
+    "ParameterValue": {{ cluster_size }}
+  },
+  {
+    "ParameterKey": "DemoTemplate",
+    "ParameterValue": "No"
+  },
+  {
+    "ParameterKey": "DemoVPC",
+    "ParameterValue": "10.250.0.0/16"
+  },
+  {
+    "ParameterKey": "DemoSubnet",
+    "ParameterValue": "10.250.250.0/24"
+  }
+]

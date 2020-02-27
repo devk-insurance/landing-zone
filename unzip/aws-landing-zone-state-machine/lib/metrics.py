@@ -60,9 +60,5 @@ class Metrics(object):
                 r = requests.post(url, data=json_data, headers=headers)
                 code = r.status_code
                 return code
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
-
+        except:
+            pass

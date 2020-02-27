@@ -31,18 +31,18 @@ Parameters:
     Description: VPC options
     AllowedValues:
       - No-Primary-VPC
-      - 1-Tier-2-AZ-Public-VPC
-      - 1-Tier-3-AZ-Public-VPC
-      - 1-Tier-4-AZ-Public-VPC
-      - 1-Tier-2-AZ-Private-VPC
-      - 1-Tier-3-AZ-Private-VPC
-      - 1-Tier-4-AZ-Private-VPC
-      - 2-Tier-2-AZ-Public-Private-VPC
-      - 2-Tier-3-AZ-Public-Private-VPC
-      - 2-Tier-4-AZ-Public-Private-VPC
-      - 3-Tier-2-AZ-Public-Private-Private-VPC
-      - 3-Tier-3-AZ-Public-Private-Private-VPC
-      - 3-Tier-4-AZ-Public-Private-Private-VPC
+      - Public-Only-2-AZ
+      - Public-Only-3-AZ
+      - Public-Only-4-AZ
+      - Private-Only-2-AZ
+      - Private-Only-3-AZ
+      - Private-Only-4-AZ
+      - Public-and-Private-Subnets-2-AZ
+      - Public-and-Private-Subnets-3-AZ
+      - Public-and-Private-Subnets-4-AZ
+      - Public-and-2-Private-Subnets-2-AZ
+      - Public-and-2-Private-Subnets-3-AZ
+      - Public-and-2-Private-Subnets-4-AZ
 
   VPCRegion:
     Description: VPC Region
@@ -100,17 +100,6 @@ Metadata:
       VPCRegion:
         default: Network Region
 
-#
-# Rules for template Constraints
-#
-
-# Rules:
-#     VPCPeeringRule:
-#       RuleCondition: !Contains [['No-Primary-VPC', '1-Tier-2-AZ-Public-VPC', '1-Tier-3-AZ-Public-VPC', '1-Tier-4-AZ-Public-VPC'], !Ref 'VPCOptions']
-#       Assertions:
-#       - Assert: !Equals [!Ref 'PeerVPC', 'false']
-#         AssertDescription: The VPC must have private subnets to peer with. Choose a supported VPC design for peering or choose no peering.
-
 Mappings:
   OUToSCPMap:
     {%- for ou in manifest.organizational_units %}
@@ -123,7 +112,7 @@ Mappings:
         {%- endfor %}
     {%- endfor %}
   VPC:
-    1-Tier-2-AZ-Public-VPC:
+    Public-Only-2-AZ:
       AvailabilityZones: 2
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -132,7 +121,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'false'
       CreatePublicSubnets: 'true'
-    1-Tier-3-AZ-Public-VPC:
+    Public-Only-3-AZ:
       AvailabilityZones: 3
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -142,7 +131,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'false'
       CreatePublicSubnets: 'true'
-    1-Tier-4-AZ-Public-VPC:
+    Public-Only-4-AZ:
       AvailabilityZones: 4
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -153,7 +142,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'false'
       CreatePublicSubnets: 'true'
-    1-Tier-2-AZ-Private-VPC:
+    Private-Only-2-AZ:
       AvailabilityZones: 2
       PublicSubnets: []
       PrivateSubnets:
@@ -162,7 +151,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'false'
-    1-Tier-3-AZ-Private-VPC:
+    Private-Only-3-AZ:
       AvailabilityZones: 3
       PublicSubnets: []
       PrivateSubnets:
@@ -172,7 +161,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'false'
-    1-Tier-4-AZ-Private-VPC:
+    Private-Only-4-AZ:
       AvailabilityZones: 4
       PublicSubnets: []
       PrivateSubnets:
@@ -183,7 +172,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'false'
-    2-Tier-2-AZ-Public-Private-VPC:
+    Public-and-Private-Subnets-2-AZ:
       AvailabilityZones: 2
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -194,7 +183,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'true'
-    2-Tier-3-AZ-Public-Private-VPC:
+    Public-and-Private-Subnets-3-AZ:
       AvailabilityZones: 3
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -207,7 +196,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'true'
-    2-Tier-4-AZ-Public-Private-VPC:
+    Public-and-Private-Subnets-4-AZ:
       AvailabilityZones: 4
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -222,7 +211,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'false'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'true'
-    3-Tier-2-AZ-Public-Private-Private-VPC:
+    Public-and-2-Private-Subnets-2-AZ:
       AvailabilityZones: 2
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -235,7 +224,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'true'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'true'
-    3-Tier-3-AZ-Public-Private-Private-VPC:
+    Public-and-2-Private-Subnets-3-AZ:
       AvailabilityZones: 3
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -251,7 +240,7 @@ Mappings:
       CreateAdditionalPrivateSubnets: 'true'
       CreatePrivateSubnets: 'true'
       CreatePublicSubnets: 'true'
-    3-Tier-4-AZ-Public-Private-Private-VPC:
+    Public-and-2-Private-Subnets-4-AZ:
       AvailabilityZones: 4
       PublicSubnets:
           - PublicSubnet1CIDR
@@ -330,9 +319,11 @@ Resources:
 #
 # Cloudformation StackSets Custom Resource
 #
+
 {%- for resource in manifest.baseline_resources %}
-  {% if resource.deploy_method == 'stack_set' and resource.parameter_override != 'true' %}
-    {% if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+  {%- if resource.deploy_method == 'stack_set' and resource.parameter_override != 'true' %}
+    {%- if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+
   StackSet{{resource.name}}:
     DependsOn:
       - Organizations
@@ -365,8 +356,9 @@ Resources:
 # CloudFormation StackSets Custom Resource - PrimaryVPC
 #
 {%- for resource in manifest.baseline_resources %}
-  {% if resource.name == 'PrimaryVPC' %}
-    {% if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+  {%- if resource.name == 'PrimaryVPC' %}
+    {%- if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+
   StackSet{{resource.name}}:
     Condition: CreateVPC
     DependsOn:
@@ -402,8 +394,8 @@ Resources:
       - Organizations
       - DetachSCP
         {%- for resource in manifest.baseline_resources %}
-          {% if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
-            {% if resource.name != 'PrimaryVPC' %}
+          {%- if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+            {%- if resource.name != 'PrimaryVPC' %}
       - StackSet{{resource.name}}
             {%- endif %}
           {%- endif %}
@@ -452,21 +444,56 @@ Resources:
       Region: !Ref VPCRegion
       ServiceToken: {{ lambda_arn }}
 
-
 #
 # VPC Custom Resource - Get SSM Parameter Values
 #
 
-  VPCParameters:
+  SSMGetParameters:
     Type: Custom::SSMParameters
     Properties:
-        SSMParameterKeys: # TODO, insert with jinja
+        SSMParameterKeys:
           - /org/member/sharedservices/vpc_private_route_ids
           - /org/member/sharedservices/vpc_id
           - /org/member/sharedservices/account_id
           - /org/member/sharedservices/vpc_region
+          - /org/member/security/account_id
+          - /org/member/logging/account_id
         ServiceToken: {{ lambda_arn }}
 
+{%- for ou in manifest.organizational_units %}
+{%- for account in ou.core_accounts %}
+{%- for resource in account.core_resources %}
+{%- if 'guardduty' in resource.name.lower() %}
+  {% if resource.regions %}
+    {% set region_list =  resource.regions %}
+  {% else %}
+    {% set region_list =  [manifest.region] %}
+  {%- endif %}
+{%- for region in region_list %}
+
+#
+# GuardDuty Custom Resource - {{ region }} (depends on release/v2.0)
+#
+
+  GuardDutyMemberof{{ account.name.title() }}Account{{region.title() | replace("-","") }}:
+    DependsOn:
+      - Organizations
+      - DetachSCP
+    Type: Custom::HandShakeStateMachine
+    Properties:
+      ServiceType: GuardDuty
+      HubAccountId: !GetAtt 'SSMGetParameters./org/member/{{ account.name }}/account_id'
+      HubRegion: {{ region }}
+      SpokeAccountId: !GetAtt 'Organizations.AccountId'
+      SpokeRegion: {{ region }}
+      SpokeEmailId: !Ref AccountEmail
+      ServiceToken: {{ lambda_arn }}
+
+{%- endfor %}
+{%- endif %}
+{%- endfor %}
+{%- endfor %}
+{%- endfor %}
 
 #
 # Expunge VPC Custom Resource - Delete Default VPC
@@ -488,20 +515,19 @@ Resources:
 # VPC Custom Resource - Peering
 #
 
-  VPCPeering:
+  VPCPeeringCR:
     Condition: PeerVPC
-    Type: Custom::VPCPeering
+    Type: Custom::HandShakeStateMachine
     DependsOn:
       - StackSetPrimaryVPC
     Properties:
-      PeeringConnectionKeyPrefix: /org/member/sharedservices
-      PeeringAccountID: !GetAtt 'VPCParameters./org/member/sharedservices/account_id'
-      PeeringVPCID: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_id'
-      PeeringRegion: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_region'
-      AccountName: !Ref AccountName
-      AccountID : !GetAtt 'Organizations.AccountId'
-      VPCID : !GetAtt 'StackSetPrimaryVPC.output_vpcid'
-      Region: !Ref VPCRegion
+      ServiceType: VPCPeering
+      HubAccountId: !GetAtt 'SSMGetParameters./org/member/sharedservices/account_id'
+      HubRegion: !GetAtt 'SSMGetParameters./org/member/sharedservices/vpc_region'
+      HubVPCId: !GetAtt 'SSMGetParameters./org/member/sharedservices/vpc_id'
+      SpokeAccountId: !GetAtt 'Organizations.AccountId'
+      SpokeVPCId: !GetAtt 'StackSetPrimaryVPC.output_vpcid'
+      SpokeRegion: !Ref VPCRegion
       ServiceToken: {{ lambda_arn }}
 
 #
@@ -513,13 +539,13 @@ Resources:
     Type: Custom::VPCPeering
     DependsOn:
       - StackSetPrimaryVPC
-      - VPCPeering
+      - VPCPeeringCR
     Properties:
       AccountID : !GetAtt 'Organizations.AccountId'
       Region: !Ref VPCRegion
       RouteTableIDs: !GetAtt 'StackSetPrimaryVPC.output_privatesubnetroutetables'
-      PeerConnectionID : !GetAtt 'VPCPeering.PeerConnectionID'
-      VPCCIDR: !GetAtt 'VPCPeering.RequesterVPCCIDR'
+      PeerConnectionID : !GetAtt 'VPCPeeringCR.ConnectionId'
+      VPCCIDR: !GetAtt 'VPCPeeringCR.HubVPCCIDR'
       ServiceToken: {{ lambda_arn }}
 
   SharedVPCPeerRouting:
@@ -527,13 +553,13 @@ Resources:
     Type: Custom::VPCPeering
     DependsOn:
       - StackSetPrimaryVPC
-      - VPCPeering
+      - VPCPeeringCR
     Properties:
-      AccountID: !GetAtt 'VPCPeering.RequesterAccountID'
-      Region: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_region'
-      RouteTableIDs: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_private_route_ids'
-      PeerConnectionID : !GetAtt 'VPCPeering.PeerConnectionID'
-      VPCCIDR: !GetAtt 'VPCPeering.AccepterVPCCIDR'
+      AccountID: !GetAtt 'SSMGetParameters./org/member/sharedservices/account_id'
+      Region: !GetAtt 'SSMGetParameters./org/member/sharedservices/vpc_region'
+      RouteTableIDs: !GetAtt 'SSMGetParameters./org/member/sharedservices/vpc_private_route_ids'
+      PeerConnectionID : !GetAtt 'VPCPeeringCR.ConnectionId'
+      VPCCIDR: !GetAtt 'VPCPeeringCR.SpokeVPCCIDR'
       ServiceToken: {{ lambda_arn }}
 
 Outputs:

@@ -58,10 +58,12 @@ class Resource(AttributeDictionary):
         self.depends_on = []
         self.parameter_override = parameter_override
 
+
 @yorm.attr(all=Resource)
 class ResourcesList(List):
     def __init__(self):
         super().__init__()
+
 
 @yorm.attr(name=String)
 @yorm.attr(email=String)
@@ -74,6 +76,7 @@ class Account(AttributeDictionary):
         self.email = email
         self.ssm_parameters = []
         self.core_resources = []
+
 
 @yorm.attr(all=Account)
 class AccList(List):

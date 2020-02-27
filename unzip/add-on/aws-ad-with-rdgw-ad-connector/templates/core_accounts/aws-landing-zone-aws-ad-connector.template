@@ -1,0 +1,951 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy AD Connector
+
+Parameters:
+  PrimaryAccountName:
+    Description: Account name
+    Type: String
+    Default: master
+  PrimaryAccountID:
+    Description: Account ID
+    Type: String
+  PrimaryAccountVPCID:
+    Description: VPC ID
+    Type: String
+  PrimaryAccountPrivateRouteTableIDs:
+    Description: Route table ID
+    Type: String
+  SharedServiceAccountID:
+    Description: Account ID
+    Type: String
+  SharedServiceAccountPrivateRouteTableIDs:
+    Description: Route table ID
+    Type: String
+  SharedServiceVPCID:
+    Description: VPC ID
+    Type: String
+  SharedServiceVPCRegion:
+    Description: VPC Region
+    Type: String
+  ADConnectorSize:
+    Description: The size of the AD connector. Small or Large
+    Type: String
+    Default: Small
+    AllowedValues:
+      - Small
+      - Large
+  PrivateSubnet1ID:
+    Description: ID of the private subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)
+    Type: String
+  PrivateSubnet2ID:
+    Description: ID of the private subnet 2 in Availability Zone 2 (e.g., subnet-a0246dcd)
+    Type: String
+  DomainDNSName:
+    Description: Fully qualified domain name (FQDN) of the forest root domain e.g. example.com
+    Type: String
+    Default: example.com
+  DomainNetBIOSName:
+    Description: NetBIOS name of the domain (upto 15 characters) for users of earlier versions of Windows e.g. EXAMPLE
+    Type: String
+    Default: example
+  ConnectorUserName:
+    Description: The username of an account for the existing directory that is used by the AD connector.
+    Type: String
+    Default: connector
+  ConnectorPassword:
+    Description: Password for the connector user
+    Type: String
+    NoEcho: true
+    # change this ssm param key - so we can get_param secure
+  ALZRegion:
+    Description: SSM Parameter Store Region
+    Type: String
+  ADServer1PrivateIP:
+    Description: AD Server 1 Private IP Address
+    Type: String
+  ADServer2PrivateIP:
+    Description: AD Server 2 Private IP Address
+    Type: String
+
+Mappings:
+  LambdaFunction:
+    Logging:
+      Level: 'info'
+
+
+Resources:
+#
+#  LandingZone lambda function & Role
+#
+
+  LockDownRoleArnParameterLandingZoneLambdaRoleADConnector:
+    DependsOn:
+      - LandingZoneLambda
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /lock_down_role_arns_list/LandingZoneLambdaRoleADConnector
+      Description: Contains the IAM Role ARNs to lock down the AWSCloudFormationStackSetExecutionRole Role in member account
+      Type: String
+      Value: !Sub arn:aws:iam::${AWS::AccountId}:role/LandingZoneLambdaRoleADConnector
+
+  LockDownRoleArnParameterLandingZoneHandshakeSMLambdaRoleADConnector:
+    DependsOn:
+      - LandingZoneLambda
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /lock_down_role_arns_list/LandingZoneHandshakeSMLambdaRoleADConnector
+      Description: Contains the IAM Role ARNs to lock down the AWSCloudFormationStackSetExecutionRole Role in member account
+      Type: String
+      Value: !Sub arn:aws:iam::${AWS::AccountId}:role/LandingZoneHandshakeSMLambdaRoleADConnector
+
+  LandingZoneLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LandingZoneLambdaRoleADConnector
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: LandingZoneLambdaADConnector
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ['', ['arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId',
+                      ':log-group:/aws/lambda/*']]
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - states:DescribeStateMachine
+                  - states:DescribeStateMachineForExecution
+                  - states:DescribeExecution
+                  - states:ListExecutions
+                  - states:StartExecution
+                  - states:StopExecution
+                Resource:
+                  - !Ref ADConnectorStateMachine
+                  - !Ref HandshakeStateMachine
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeRegions
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - ec2:DeleteInternetGateway
+                  - ec2:DeleteSubnet
+                  - ec2:DeleteVpc
+                  - ec2:DetachInternetGateway
+                  - ec2:CreateKeyPair
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeVPCPeeringConnections
+                  - ec2:CreateVPCPeeringConnection
+                  - ec2:AcceptVPCPeeringConnection
+                  - ec2:DeleteVPCPeeringConnection
+                  - ec2:CreateRoute
+                  - ec2:ReplaceRoute
+                  - ec2:DeleteRoute
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:DeleteParameter
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource: 'arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole'
+
+  LandingZoneLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          log_level: 'info'
+          sm_arn_ad_connector: !Ref ADConnectorStateMachine
+          sm_arn_handshake_sm: !Ref HandshakeStateMachine
+      Code:
+        S3Bucket: !Sub solutions-${AWS::Region}
+        S3Key: aws-landing-zone/v2.0/aws-landing-zone-avm.zip
+      Description: AWS Lambda-backed Custom Resources for AVM
+      FunctionName: LandingZoneADConnector
+      Handler: lambda_custom_resource.lambda_handler
+      MemorySize: '1024'
+      Role: !GetAtt 'LandingZoneLambdaRole.Arn'
+      Runtime: python3.6
+      Timeout: '300'
+      TracingConfig:
+          Mode: Active
+
+
+  StateMachineLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          log_level: 'info'
+      Code:
+        S3Bucket: !Sub solutions-${AWS::Region}
+        S3Key: aws-landing-zone/v2.0/aws-landing-zone-state-machine.zip
+      Description: AWS Landing Zone State Machine Handler
+      FunctionName: LandingZoneStateMachineLambdaADConnector
+      Handler: state_machine_router.lambda_handler
+      MemorySize: '1024'
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/StateMachineLambdaRole
+      Runtime: python3.6
+      Timeout: '300'
+      TracingConfig:
+          Mode: Active
+
+  StateMachineRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub "states.${AWS::Region}.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "lambda"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+
+  ADConnectorStateMachine:
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      StateMachineName: LandingZoneADConnectorStateMachine
+      RoleArn: !GetAtt 'StateMachineRole.Arn'
+      DefinitionString:
+        Fn::Sub: |-
+          {
+            "Comment": "A state machine to launch or terminate AD Connector",
+            "StartAt": "Describe Directory Pass",
+            "States": {
+              "Describe Directory Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "describe_directory"
+                },
+                "ResultPath": "$.params",
+                "Next": "Describe Directory"
+              },
+              "Describe Directory": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "AD Connector: Create or Delete?"
+              },
+              "AD Connector: Create or Delete?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "And": [
+                      {
+                        "Or": [
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Create"
+                          },
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Update"
+                          }
+                        ]
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "no"
+                      }
+                    ],
+                    "Next": "Create AD Connector Pass"
+                  },
+                  {
+                    "And": [
+                      {
+                        "Or": [
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Create"
+                          },
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Update"
+                          }
+                        ]
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "yes"
+                      }
+                    ],
+                    "Next": "Send Success Pass"
+                  },
+                  {
+                    "And": [
+                      {
+                        "Variable": "$.RequestType",
+                        "StringEquals": "Delete"
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "yes"
+                      }
+                    ],
+                    "Next": "Delete AD Connector Pass"
+                  },
+                  {
+                    "And": [
+                      {
+                        "Variable": "$.RequestType",
+                        "StringEquals": "Delete"
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "no"
+                      }
+                    ],
+                    "Next": "Send Success Pass"
+                  }
+                ]
+              },
+              "Delete AD Connector Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "delete_directory"
+                },
+                "ResultPath": "$.params",
+                "Next": "Delete AD Connector"
+              },
+              "Delete AD Connector": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Check AD Connector Pass"
+              },
+              "Create AD Connector Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "connect_directory"
+                },
+                "ResultPath": "$.params",
+                "Next": "Create AD Connector"
+              },
+              "Create AD Connector": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Check AD Connector Pass"
+              },
+              "Check AD Connector Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "check_directory_status"
+                },
+                "ResultPath": "$.params",
+                "Next": "Check AD Connector"
+              },
+              "Check AD Connector": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Check Complete?"
+              },
+              "Check Complete?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Or": [
+                      {
+                        "Variable": "$.CreateStatus",
+                        "StringEquals": "Complete"
+                      },
+                      {
+                        "Variable": "$.DeleteStatus",
+                        "StringEquals": "Complete"
+                      }
+                    ],
+                    "Next": "Send Success Pass"
+                  },
+                  {
+                    "Or": [
+                      {
+                        "Variable": "$.CreateStatus",
+                        "StringEquals": "Fail"
+                      },
+                      {
+                        "Variable": "$.DeleteStatus",
+                        "StringEquals": "Fail"
+                      }
+                    ],
+                    "Next": "Send Failed Pass"
+                  }
+                ],
+                "Default": "Check AD Connector Wait"
+              },
+              "Check AD Connector Wait": {
+                "Type": "Wait",
+                "Seconds": 10,
+                "Next": "Check AD Connector Pass"
+              },
+              "Send Success Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "send_success_to_cfn"
+                },
+                "ResultPath": "$.params",
+                "Next": "Send Success Response"
+              },
+              "Send Success Response": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Success"
+              },
+              "Success": {
+                "Type": "Succeed"
+              },
+              "Send Failed Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "send_failure_to_cfn"
+                },
+                "ResultPath": "$.params",
+                "Next": "Send Failed Response"
+              },
+              "Send Failed Response": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Failed"
+              },
+              "Failed": {
+                "Type": "Fail"
+              }
+            }
+          }
+
+
+#
+# VPC Custom Resource - Peering
+#
+
+  VPCPeeringCR:
+    Type: Custom::HandShakeStateMachine
+    Properties:
+      ServiceType: VPCPeering
+      HubAccountId: !Ref SharedServiceAccountID
+      HubVPCId: !Ref SharedServiceVPCID
+      HubRegion: !Ref SharedServiceVPCRegion
+      SpokeAccountId : !Ref PrimaryAccountID
+      SpokeVPCId : !Ref PrimaryAccountVPCID
+      SpokeRegion: !Ref 'AWS::Region'
+      ServiceToken: !GetAtt LandingZoneLambda.Arn
+
+#
+# VPC Custom Resource - Peer Routing
+#
+
+  PrimaryVPCPeerRouting:
+    Type: Custom::VPCPeering
+    DependsOn:
+      - VPCPeeringCR
+    Properties:
+      AccountID : !Ref PrimaryAccountID
+      Region: !Ref 'AWS::Region'
+      RouteTableIDs: !Ref PrimaryAccountPrivateRouteTableIDs
+      PeerConnectionID : !GetAtt 'VPCPeeringCR.ConnectionId'
+      VPCCIDR: !GetAtt 'VPCPeeringCR.HubVPCCIDR'
+      ServiceToken: !GetAtt LandingZoneLambda.Arn
+
+  SharedVPCPeerRouting:
+    Type: Custom::VPCPeering
+    DependsOn:
+      - VPCPeeringCR
+    Properties:
+      AccountID: !Ref SharedServiceAccountID
+      Region: !Ref SharedServiceVPCRegion
+      RouteTableIDs: !Ref SharedServiceAccountPrivateRouteTableIDs
+      PeerConnectionID : !GetAtt 'VPCPeeringCR.ConnectionId'
+      VPCCIDR: !GetAtt 'VPCPeeringCR.SpokeVPCCIDR'
+      ServiceToken: !GetAtt LandingZoneLambda.Arn
+
+  ADConnector:
+    Type: Custom::ADConnector
+    DependsOn:
+      - VPCPeeringCR
+      - PrimaryVPCPeerRouting
+      - SharedVPCPeerRouting
+    Properties:
+      ADConnectorSize: !Ref ADConnectorSize
+      DomainDNSName: !Ref DomainDNSName
+      DomainNetBIOSName: !Ref DomainNetBIOSName
+      ConnectorUserName: !Ref ConnectorUserName
+      ConnectorPassword: !Ref ConnectorPassword
+      ALZRegion: !Ref ALZRegion
+      VPCId: !Ref PrimaryAccountVPCID
+      Subnet1Id: !Ref PrivateSubnet1ID
+      Subnet2Id: !Ref PrivateSubnet2ID
+      DNSIp1: !Ref ADServer1PrivateIP
+      DNSIp2: !Ref ADServer2PrivateIP
+      ServiceToken: !GetAtt LandingZoneLambda.Arn
+
+  HandshakeSMLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LandingZoneHandshakeSMLambdaRoleADConnector
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: LandingZoneHandshakeSMLambdaADConnector
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ['', ['arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId',
+                      ':log-group:/aws/lambda/*']]
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeRegions
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - ec2:DeleteInternetGateway
+                  - ec2:DeleteSubnet
+                  - ec2:DeleteVpc
+                  - ec2:DetachInternetGateway
+                  - ec2:CreateKeyPair
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeVPCPeeringConnections
+                  - ec2:CreateVPCPeeringConnection
+                  - ec2:AcceptVPCPeeringConnection
+                  - ec2:DeleteVPCPeeringConnection
+                  - ec2:CreateRoute
+                  - ec2:ReplaceRoute
+                  - ec2:DeleteRoute
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - guardduty:ListInvitations
+                  - guardduty:ListDetectors
+                  - guardduty:ListMembers
+                  - guardduty:CreateDetector
+                  - guardduty:DeleteDetector
+                  - guardduty:CreateMembers
+                  - guardduty:InviteMembers
+                  - guardduty:AcceptInvitation
+                  - guardduty:GetMasterAccount
+                  - guardduty:DeleteMembers
+                  - guardduty:DisassociateFromMasterAccount
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:DeleteParameter
+                  - ssm:DescribeParameters
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - "kms:Encrypt"
+                  - "kms:Decrypt"
+                  - "kms:ReEncryptFrom"
+                  - "kms:ReEncryptTo"
+                  - "kms:GenerateDataKey"
+                  - "kms:GenerateDataKeyWithoutPlaintext"
+                  - "kms:DescribeKey"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource: 'arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole'
+
+  HandshakeSMLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          log_level: !FindInMap [LambdaFunction, Logging, Level]
+          wait_time: 15
+      Code:
+        S3Bucket: !Sub solutions-${AWS::Region}
+        S3Key: aws-landing-zone/v2.0/aws-landing-zone-handshake-state-machine.zip
+      Description: AWS Lambda-backed Custom Resources for Handshake Mechanism
+      FunctionName: LandingZoneHandshakeSMLambdaADConnector
+      Handler: handshake_sm_router.lambda_handler
+      MemorySize: '1024'
+      Role: !GetAtt 'HandshakeSMLambdaRole.Arn'
+      Runtime: python3.6
+      Timeout: '660'
+      TracingConfig:
+        Mode: Active
+
+  HandshakeStateMachine:
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      StateMachineName: LandingZoneHandshakeStateMachineADConnector
+      RoleArn: !GetAtt 'StateMachineRole.Arn'
+      DefinitionString:
+        Fn::Sub: |-
+          {
+            "Comment": "A state machine that manages the handshakes between hub and spoke accounts for multiple AWS services",
+            "StartAt": "Metrics Pass",
+            "States": {
+              "Metrics Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "send_execution_data"
+                },
+                "ResultPath": "$.params",
+                "Next": "Metrics"
+              },
+              "Metrics": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Describe Resources Hub Pass"
+              },
+              "Describe Resources Hub Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Hub",
+                  "ClassName": "Handshake",
+                  "FunctionName": "describe_resources"
+                },
+                "ResultPath": "$.params",
+                "Next": "Describe Resources Hub"
+              },
+              "Describe Resources Hub": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Describe Resources Spoke Pass"
+              },
+              "Describe Resources Spoke Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Spoke",
+                  "ClassName": "Handshake",
+                  "FunctionName": "describe_resources"
+                },
+                "ResultPath": "$.params",
+                "Next": "Describe Resources Spoke"
+              },
+              "Describe Resources Spoke": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Action: Create or Delete?"
+              },
+              "Action: Create or Delete?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.RequestType",
+                    "StringEquals": "Delete",
+                    "Next": "Delete Resources Spoke Pass"
+                  },
+                  {
+                    "Variable": "$.RequestType",
+                    "StringEquals": "Create",
+                    "Next": "Create Resources Spoke Pass"
+                  },
+                  {
+                    "Variable": "$.RequestType",
+                    "StringEquals": "Update",
+                    "Next": "Create Resources Spoke Pass"
+                  }
+                ],
+                "Default": "Undefined Request Type"
+              },
+              "Create Resources Spoke Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Spoke",
+                  "ClassName": "Handshake",
+                  "FunctionName": "create_resources"
+                },
+                "ResultPath": "$.params",
+                "Next": "Create Resources Spoke"
+              },
+              "Create Resources Spoke": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Create Resources Hub Pass"
+              },
+              "Create Resources Hub Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Hub",
+                  "ClassName": "Handshake",
+                  "FunctionName": "create_resources"
+                },
+                "ResultPath": "$.params",
+                "Next": "Create Resources Hub"
+              },
+              "Create Resources Hub": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Send Invitation Pass"
+              },
+              "Send Invitation Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Hub",
+                  "ClassName": "Handshake",
+                  "FunctionName": "send_invitation"
+                },
+                "ResultPath": "$.params",
+                "Next": "Send Invitation"
+              },
+              "Send Invitation": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Accept Invitation Pass"
+              },
+              "Accept Invitation Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Spoke",
+                  "ClassName": "Handshake",
+                  "FunctionName": "accept_invitation"
+                },
+                "ResultPath": "$.params",
+                "Next": "Accept Invitation"
+              },
+              "Accept Invitation": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Invitation Status Pass"
+              },
+              "Invitation Status Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Spoke",
+                  "ClassName": "Handshake",
+                  "FunctionName": "check_invitation_status"
+                },
+                "ResultPath": "$.params",
+                "Next": "Invitation Status"
+              },
+              "Invitation Status": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Handshake Completed?"
+              },
+              "Handshake Completed?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.RelationshipStatus",
+                    "StringEquals": "active",
+                    "Next": "Handshake Successful"
+                  },
+                  {
+                    "Variable": "$.RelationshipStatus",
+                    "StringEquals": "enabled",
+                    "Next": "Handshake Successful"
+                  },
+                  {
+                    "Variable": "$.RelationshipStatus",
+                    "StringEquals": "created",
+                    "Next": "Handshake Successful"
+                  },
+                  {
+                    "Variable": "$.RelationshipStatus",
+                    "StringEquals": "emailverification",
+                    "Next": "Handshake Failed"
+                  },
+                  {
+                    "Variable": "$.RelationshipStatus",
+                    "StringEquals": "rejected",
+                    "Next": "Handshake Failed"
+                  },
+                  {
+                    "Variable": "$.RelationshipStatus",
+                    "StringEquals": "expired",
+                    "Next": "Handshake Failed"
+                  },
+                  {
+                    "Variable": "$.RelationshipStatus",
+                    "StringEquals": "MasterAcctIdEqualsMemberAcctId",
+                    "Next": "Handshake Successful"
+                  }
+                ],
+                "Default": "Processing Invitation"
+              },
+              "Handshake Successful": {
+                "Type": "Pass",
+                "Next": "SSM Parameter Store Pass"
+              },
+              "Handshake Failed": {
+                "Type": "Pass",
+                "Next": "Send Failed Pass"
+              },
+              "Processing Invitation": {
+                "Type": "Wait",
+                "Seconds": 10,
+                "Next": "Invitation Status Pass"
+              },
+              "Delete Resources Spoke Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Spoke",
+                  "ClassName": "Handshake",
+                  "FunctionName": "delete_resources"
+                },
+                "ResultPath": "$.params",
+                "Next": "Delete Resources Spoke"
+              },
+              "Delete Resources Spoke": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Delete Resources Hub Pass"
+              },
+              "Delete Resources Hub Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "PeerType": "Hub",
+                  "ClassName": "Handshake",
+                  "FunctionName": "delete_resources"
+                },
+                "ResultPath": "$.params",
+                "Next": "Delete Resources Hub"
+              },
+              "Delete Resources Hub": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Send Success Pass"
+              },
+              "Undefined Request Type": {
+                "Type": "Pass",
+                "Next": "Send Failed Pass"
+              },
+              "SSM Parameter Store Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "ssm_put_parameters"
+                },
+                "ResultPath": "$.params",
+                "Next": "Put Parameters"
+              },
+              "Put Parameters": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Send Success Pass"
+              },
+              "Send Success Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "send_success_to_cfn"
+                },
+                "ResultPath": "$.params",
+                "Next": "Send Success Response"
+              },
+              "Send Success Response": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Success"
+              },
+              "Success": {
+                "Type": "Succeed"
+              },
+              "Send Failed Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "send_failure_to_cfn"
+                },
+                "ResultPath": "$.params",
+                "Next": "Send Failed Response"
+              },
+              "Send Failed Response": {
+                "Type": "Task",
+                "Resource": "${HandshakeSMLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Failed"
+              },
+              "Failed": {
+                "Type": "Fail"
+              }
+            }
+          }
