@@ -18,7 +18,7 @@ from lib.ssm import SSM
 from lib.ec2 import EC2
 from lib.assume_role_helper import AssumeRole
 from lib.guardduty import GuardDuty as GD
-from botocore.vendored import requests
+import requests
 from json import dumps
 import inspect
 import time

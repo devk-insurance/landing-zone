@@ -125,7 +125,7 @@ Mappings:
     SourceBucketName:
       Name: solutions-reference
     SourceKeyName:
-      Name: aws-landing-zone/v2.2.0/add-on/aws-centralized-logging-solution.zip
+      Name: aws-landing-zone/v2.3.0/add-on/aws-centralized-logging-solution.zip
     DestinationKeyName:
       Name: aws-landing-zone-configuration.zip
   LambdaFunction:
@@ -141,7 +141,7 @@ Resources:
           log_level: !FindInMap [LambdaFunction, Logging, Level]
       Code:
         S3Bucket: !Sub solutions-${AWS::Region}
-        S3Key: aws-landing-zone/v2.2.0/aws-landing-zone-add-on-config-deployer.zip
+        S3Key: aws-landing-zone/v2.3.0/aws-landing-zone-add-on-config-deployer.zip
       Description: AWS Landing Zone Add-On Deployment Lambda
       Handler: add_on_config_deployer.lambda_handler
       MemorySize: '512'

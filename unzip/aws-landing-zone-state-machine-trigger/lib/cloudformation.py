@@ -327,3 +327,55 @@ class Stacks(object):
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
             self.logger.exception(message)
             raise
+
+
+    @try_except_retry()
+    def get_stack_summary(self, stack_name):
+        try:
+            response = self.cfn_client.get_template_summary(StackName=stack_name)
+            return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+
+    @try_except_retry()
+    def get_template_summary(self, template_url):
+        try:
+            response = self.cfn_client.get_template_summary(TemplateURL=template_url)
+            return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    @try_except_retry()
+    def update_stack(self, stack_name, template_url, capabilities):
+        try:
+            response = self.cfn_client.update_stack(StackName=stack_name,
+                                                    TemplateURL=template_url,
+                                                    Capabilities=capabilities)
+            return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    def update_stack(self, stack_name, parameters, template_url, capabilities):
+        try:
+            response = cfn_client.update_stack(
+                StackName=stack_name,
+                TemplateURL=template_url,
+                Parameters=parameters,
+                Capabilities=capabilities
+            )
+            return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise

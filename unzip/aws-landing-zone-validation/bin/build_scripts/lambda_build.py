@@ -29,7 +29,7 @@ def zip_function(zip_file_name, function_path, output_path, exclude_list):
             pass
     zip_file = zipfile.ZipFile(zip_name, mode='a')
     os.chdir(function_path)
-    print('\n Following files will be zipped in {} and saved in the deployment/dist folder. \n--------------'
+    print('\n Following files will be zipped in {} and saved in the deployment/regional-s3-assets folder. \n--------------'
           '------------------------------------------------------------------------'.format(zip_name))
     for folder, subs, files in os.walk('.'):
         for filename in files:
@@ -60,7 +60,7 @@ def main(argv):
 
     # Create Lambda Zip
     function_path = '../../source'
-    output_path = '../../deployment/dist'
+    output_path = '../../deployment/regional-s3-assets/'
     make_dir(output_path)
     base_exclude = ['power-shell', 'egg', 'requirement', 'setup', 'scratch', 'dist-info']
     print(argv)
@@ -74,36 +74,40 @@ def main(argv):
             if arg == 'avm_cr_lambda':
                 zip_file_name = 'aws-landing-zone-avm-cr'
                 exclude = ['bin', 'config_deployer', 'state_machine_', 'jinja2', 'simplejson', 'markupsafe', 'yaml', 'yorm',
-                           'validation', 'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm']
+                           'validation', 'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm', 'publish']
             elif arg == 'state_machine_lambda':
                 zip_file_name = 'aws-landing-zone-state-machine'
                 exclude = ['bin', 'config_deployer', 'custom_resource', 'trigger', 'jinja2', 'simplejson', 'markupsafe',
-                           'yaml', 'yorm', 'netaddr', 'validation', 'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm']
+                           'yaml', 'yorm', 'netaddr', 'validation', 'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm', 'publish']
             elif arg == 'trigger_lambda':
                 zip_file_name = 'aws-landing-zone-state-machine-trigger'
                 exclude = ['bin', 'config_deployer', 'custom_resource', 'state_machine_handler', 'state_machine_router',
-                           'netaddr', 'validation', 'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm']
+                           'netaddr', 'validation', 'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm', 'publish']
             elif arg == 'deployment_lambda':
                 zip_file_name = 'aws-landing-zone-config-deployer'
                 exclude = ['bin', 'yorm', 'yaml', 'custom_resource', 'state_machine_', 'netaddr', 'validation',
-                           'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm']
+                           'manifest_handler', 'handshake_sm', 'add_on_config_deployer', 'launch_avm', 'publish']
             elif arg == 'add_on_deployment_lambda':
                 zip_file_name = 'aws-landing-zone-add-on-config-deployer'
                 exclude = ['bin', 'yorm', 'yaml', 'custom_resource', 'state_machine_', 'netaddr', 'validation',
-                           'manifest_handler', 'handshake_sm', 'launch_avm']
+                           'manifest_handler', 'handshake_sm', 'launch_avm', 'publish']
             elif arg == 'build_scripts':
                 zip_file_name = 'aws-landing-zone-validation'
                 # DO NOT INCLUDE 'yaml' to the exclude list or else it will skip to include manifest.schema.yaml which will cause the build stage to fail
                 exclude = ['config_deployer', 'state_machine_', 'simplejson', 'netaddr','yorm', 'jinja2', 'handshake_sm',
-                           'markupsafe', 'custom_resource', 'certifi', 'chardet', 'idna' , 'requests', 'urllib3', 'add_on_config_deployer', 'launch_avm']
+                           'markupsafe', 'custom_resource', 'certifi', 'chardet', 'idna' , 'requests', 'urllib3', 'add_on_config_deployer', 'launch_avm', 'publish']
             elif arg == 'handshake_sm_lambda':
                 zip_file_name = 'aws-landing-zone-handshake-state-machine'
                 exclude = ['bin', 'config_deployer', 'state_machine_', 'custom_resource', 'trigger', 'jinja2', 'simplejson', 'markupsafe',
-                           'yaml', 'yorm', 'netaddr', 'add_on_config_deployer', 'launch_avm']
+                           'yaml', 'yorm', 'netaddr', 'add_on_config_deployer', 'launch_avm', 'publish']
             elif arg == 'launch_avm':
                 zip_file_name = 'aws-landing-zone-launch-avm'
                 exclude = ['bin', 'config_deployer', 'custom_resource', 'trigger', 'add_on_config_deployer'
-                           'netaddr', 'validation', 'manifest_handler', 'handshake_sm']
+                           'netaddr', 'validation', 'manifest_handler', 'handshake_sm', 'publish']
+            elif arg == 'add_on_publisher':
+                zip_file_name = 'aws-landing-zone-addon-publisher'
+                exclude = ['config_deployer', 'state_machine_', 'simplejson', 'netaddr','yorm', 'jinja2', 'handshake_sm', 'yaml', 'validation', 'bin',
+                           'markupsafe', 'custom_resource', 'certifi', 'chardet', 'idna', 'requests', 'urllib3', 'add_on_config_deployer', 'launch_avm']
             else:
                 print('Invalid argument... Please provide either or all the arguments as shown in the example below.')
                 print('lambda_build.py avm_cr_lambda state_machine_lambda trigger_lambda deployment_lambda add_on_deployment_lambda')

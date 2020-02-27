@@ -1,0 +1,92 @@
+[
+    {
+        "ParameterKey": "AvailabilityZones",
+        "ParameterValue": "$[alfred_genaz_{{ number_of_az|replace("\"", "") }}]",
+        "ssm_parameters": [
+        {
+          "name": "/org/member/sharedservices/primary_vpc/az_list",
+          "value": "$[AZ]"
+        }
+      ]
+    },
+    {
+        "ParameterKey": "NumberOfAZs",
+        "ParameterValue": {{ number_of_az }}
+    },
+    {
+        "ParameterKey": "CreateAdditionalPrivateSubnets",
+        "ParameterValue": {{ additional_private_subnets }}
+    },
+    {
+        "ParameterKey": "CreatePrivateSubnets",
+        "ParameterValue": {{ create_private_subnets }}
+    },
+    {
+        "ParameterKey": "CreatePublicSubnets",
+        "ParameterValue": {{ create_public_subnets }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet1ACIDR",
+        "ParameterValue": {{ private_subnet1a_cidr }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet1BCIDR",
+        "ParameterValue": {{ private_subnet1b_cidr }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet2ACIDR",
+        "ParameterValue": {{ private_subnet2a_cidr }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet2BCIDR",
+        "ParameterValue": {{ private_subnet2b_cidr }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet3ACIDR",
+        "ParameterValue": {{ private_subnet3a_cidr }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet3BCIDR",
+        "ParameterValue": {{ private_subnet3b_cidr }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet4ACIDR",
+        "ParameterValue": {{ private_subnet4a_cidr }}
+    },
+    {
+        "ParameterKey": "PrivateSubnet4BCIDR",
+        "ParameterValue": {{ private_subnet4b_cidr }}
+    },
+    {
+        "ParameterKey": "PublicSubnet1CIDR",
+        "ParameterValue": {{ public_subnet1_cidr }}
+    },
+    {
+        "ParameterKey": "PublicSubnet2CIDR",
+        "ParameterValue": {{ public_subnet2_cidr }}
+    },
+    {
+        "ParameterKey": "PublicSubnet3CIDR",
+        "ParameterValue": {{ public_subnet3_cidr }}
+    },
+    {
+        "ParameterKey": "PublicSubnet4CIDR",
+        "ParameterValue": {{ public_subnet4_cidr }}
+    },
+    {
+        "ParameterKey": "VPCCIDR",
+        "ParameterValue": {{ vpc_cidr }}
+    },
+    {
+        "ParameterKey": "TransitVPC",
+        "ParameterValue": {{ transit_vpc }}
+    },
+    {
+        "ParameterKey": "LogsRetentionInDays",
+        "ParameterValue": {{ logs_retention_in_days }}
+    },
+    {
+        "ParameterKey": "ManagedResourcePrefix",
+        "ParameterValue": "aws-landing-zone"
+    }
+]

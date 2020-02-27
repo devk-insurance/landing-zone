@@ -439,7 +439,8 @@ class ServiceCatalog(object):
                         search_query
                     ]
                 },
-                PageToken=next_token
+                PageToken=next_token,
+                SortBy="createdTime"
             )
             return response
         except Exception as e:

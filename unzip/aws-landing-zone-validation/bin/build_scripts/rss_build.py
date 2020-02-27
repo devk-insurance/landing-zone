@@ -49,7 +49,7 @@ def main(argv):
     if 'bin' not in os.getcwd():
         os.chdir('./source/bin/build_scripts')
 
-    output_path = '../../../deployment/dist/'
+    output_path = '../../../deployment/regional-s3-assets/'
     make_dir(output_path)
 
     print('Loading CHANGELOG.md into memory...')

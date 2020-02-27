@@ -27,7 +27,7 @@ import shutil
 import errno
 
 # initialise logger
-log_level = os.environ.get('log_level')
+log_level = 'info' if os.environ.get('log_level') is None else os.environ.get('log_level')
 logger = Logger(loglevel=log_level)
 init_failed = False
 
@@ -103,7 +103,7 @@ def make_dir(directory):
         os.makedirs(directory)
 
 
-def config_deployer(event, RequestType = 'Create'):
+def config_deployer(event, previous_event, RequestType = 'Create'):
     try:
         s3 = S3(logger)
         base_path = '/tmp/lz'
@@ -168,6 +168,20 @@ def config_deployer(event, RequestType = 'Create'):
 
                 make_dir(lzconfig_add_on_path)
                 shutil.copyfile(output_path + "/" + add_on_zip_file_name, lzconfig_add_on_path + "/" + add_on_zip_file_name)
+
+                # if previous_event exists - delete the old zip file from the landing zone config zip
+                if previous_event is not None:
+                    # old event variables - for update path
+                    previous_source_key_name = previous_event.get('bucket_config', {}).get('source_s3_key')
+                    previous_add_on_zip_file_name = previous_source_key_name.split("/")[
+                        -1] if "/" in previous_source_key_name else previous_source_key_name
+                    logger.info("Found old resource properties in the CFN event. Printing old resource properties.")
+                    logger.info(previous_event)
+                    my_file = Path(lzconfig_add_on_path + "/" + previous_add_on_zip_file_name)
+                    logger.info("Searching for {} in the ALZ config zip contents".format(my_file))
+                    if my_file.is_file():
+                        logger.info("Found the old add-on zip file in the ALZ config zip, deleting the file")
+                        os.remove(lzconfig_add_on_path + "/" + previous_add_on_zip_file_name)
 
                 zip_function(destination_key_name, lzconfig_extract_path, output_path)
                 # Upload the file in the customer S3 bucket
@@ -238,7 +252,7 @@ def create(event, context):
     logger.info("physical_resource_id: {}".format(physical_resource_id))
 
     if event.get('ResourceType') == 'Custom::AddOnConfigDeployer':
-        response = config_deployer(event.get('ResourceProperties'), 'Create')
+        response = config_deployer(event.get('ResourceProperties'), event.get('OldResourceProperties'), 'Create')
         return physical_resource_id, response
     else:
         logger.error('No valid ResourceType found!')
@@ -251,7 +265,7 @@ def update(event, context):
     physical_resource_id = event.get('PhysicalResourceId')
 
     if event.get('ResourceType') == 'Custom::AddOnConfigDeployer':
-        response = config_deployer(event.get('ResourceProperties'), 'Create')
+        response = config_deployer(event.get('ResourceProperties'), event.get('OldResourceProperties'), 'Create')
         return physical_resource_id, response
     else:
         logger.error('No valid ResourceType found!')
@@ -263,7 +277,7 @@ def delete(event, context):
     """
     physical_resource_id = event.get('PhysicalResourceId')
     if event.get('ResourceType') == 'Custom::AddOnConfigDeployer':
-        response = config_deployer(event.get('ResourceProperties'),'Delete')
+        response = config_deployer(event.get('ResourceProperties'), event.get('OldResourceProperties'), 'Delete')
         return physical_resource_id, response
     else:
         logger.error('No valid ResourceType found!')

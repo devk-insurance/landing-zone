@@ -1,0 +1,58 @@
+[
+  {
+    "ParameterKey": "EnableEncryptedVolumesRule",
+    "ParameterValue": {{ enable_encrypted_volumes_rule | replace("Yes","true") | replace("No","false") }}
+  },
+  {
+    "ParameterKey": "EnableRdsEncryptionRule",
+    "ParameterValue": {{ enable_rds_encryption_rule | replace("Yes","true") | replace("No","false") }}
+  },
+  {
+    "ParameterKey": "EnableS3PublicReadRule",
+    "ParameterValue": {{ enable_s3_public_read_rule | replace("Yes","true") | replace("No","false") }}
+  },
+  {
+    "ParameterKey": "EnableS3PublicWriteRule",
+    "ParameterValue": {{ enable_s3_public_write_rule | replace("Yes","true") | replace("No","false") }}
+  },
+  {
+    "ParameterKey": "EnableS3ServerSideEncryptionRule",
+    "ParameterValue": {{ enable_s3_server_side_encryption_rule | replace("Yes","true") | replace("No","false") }}
+  },
+  {
+    "ParameterKey": "EnableRestrictedCommonPortsRule",
+    "ParameterValue": {{ enable_restricted_common_ports_rule | replace("Yes","true") | replace("No","false") }}
+  },
+  {
+    "ParameterKey": "EnableRestrictedSshRule",
+    "ParameterValue": {{ enable_restricted_ssh_rule | replace("Yes","true") | replace("No","false") }}
+  },
+  {
+    "ParameterKey": "KMSId",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "MaximumExecutionFrequency",
+    "ParameterValue": "TwentyFour_Hours"
+  },
+  {
+    "ParameterKey": "blockedPort1",
+    "ParameterValue": "20"
+  },
+  {
+    "ParameterKey": "blockedPort2",
+    "ParameterValue": "21"
+  },
+  {
+    "ParameterKey": "blockedPort3",
+    "ParameterValue": "3389"
+  },
+  {
+    "ParameterKey": "blockedPort4",
+    "ParameterValue": "3306"
+  },
+  {
+    "ParameterKey": "blockedPort5",
+    "ParameterValue": "4333"
+  }
+]

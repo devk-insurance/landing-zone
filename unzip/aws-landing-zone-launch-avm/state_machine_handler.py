@@ -26,7 +26,7 @@ from lib.ec2 import EC2
 from lib.sts import STS
 from lib.iam import IAM
 from os import environ
-from botocore.vendored import requests
+import requests
 from botocore.exceptions import ClientError
 from json import dumps, loads
 import inspect
@@ -2729,7 +2729,7 @@ class GeneralFunctions(object):
 
             if credentials.get('Error') is not None:
                 self.event.update({'AccountInitialized': "no"})
-                self.event.update({'Error': 'AWS STS AssumeRole Failure: Access Denied.'})
+                self.event.update({'Error': credentials.get('Error')})
                 return self.event
             else:
                 # instantiate EC2 class using temporary security credentials

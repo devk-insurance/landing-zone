@@ -1,0 +1,175 @@
+# Copyright 2012-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Amazon Software License (the "License").
+# You may not use this file except in compliance with the License.
+# A copy of the License is located at
+#
+# http://aws.amazon.com/asl/
+#
+# or in the "license" file accompanying this file. This file is distributed
+# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+# express or implied. See the License for the specific language governing
+# permissions and limitations under the License.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Centralized Logging Solution - Add-On Product
+
+Parameters:
+  #General Inputs; applies to all Add-Ons
+  AccountName:
+    Description: In which Account do you wish to deploy?
+    Type: String
+    Default: shared-services
+
+  OUName:
+    Description: Which OU does the above Account belong to?
+    Type: String
+    Default: core
+
+  Region:
+    Description: In Which Region do you wish to deploy Centralized Logging Hub?
+    Type: String
+
+  MergeAddOn:
+    Type: String
+    Description: Do you want to trigger the pipeline right away to deploy the Add-On?
+    Default: 'Yes'
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+
+  AVMProduct:
+    Description: AWS Landing Zone Baseline Service Catalog Product
+    Type: CommaDelimitedList
+    Default: AWS-Landing-Zone-Account-Vending-Machine
+
+  #Add-On specific Inputs
+  DOMAINNAME:
+    Description: Name for the Amazon ES domain that this template will create. Domain names must start with a lowercase letter and must be between 3 and 28 characters. Valid characters are a-z (lowercase only), 0-9.
+    Type: String
+    Default: centralizedlogging
+
+  # Email address for the Elasticsearch domain admin
+  DomainAdminEmail:
+    Description: An email address to send Amazon Elasticsearch service CloudWatch alarm notifications
+    Type: String
+    AllowedPattern: ^[_A-Za-z0-9-\+\.]+(\.[_A-Za-z0-9-]+)*@[A-Za-z0-9-]+(\.[A-Za-z0-9]+)*(\.[A-Za-z]{2,})$
+
+  # Email address for Cognito Admin user
+  CognitoAdminEmail:
+    Description: Email address for creating a Cognito user to access Kibana dashboard
+    Type: String
+    AllowedPattern: ^[_A-Za-z0-9-\+\.]+(\.[_A-Za-z0-9-]+)*@[A-Za-z0-9-]+(\.[A-Za-z0-9]+)*(\.[A-Za-z]{2,})$
+
+  # ES cluster size
+  ClusterSize:
+    Description: Amazon ES cluster size; small (2 data nodes), medium (4 data nodes), large (10 data nodes)
+    Type: String
+    Default: Small
+    AllowedValues:
+    - Small
+    - Medium
+    - Large
+
+  SpokeRegions:
+    Description: In Which Regions (comma seperated list) do you wish to deploy Centralized Logging Spokes?
+    Type: CommaDelimitedList
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+         default: Account/Region Selection
+        Parameters:
+          - AccountName
+          - OUName
+          - Region
+          - AVMProduct
+      - Label:
+         default: Landing Zone Pipeline Configuration
+        Parameters:
+          - MergeAddOn
+      - Label:
+          default: AWS Centralized Logging Solution
+        Parameters:
+          - DOMAINNAME
+          - DomainAdminEmail
+          - ClusterSize
+          - CognitoAdminEmail
+          - SpokeRegions
+
+    ParameterLabels:
+      OUName:
+        default: Organizational Unit Name
+      AccountName:
+        default: Account Name
+      Region:
+        default: Centralized Logging Hub Region
+      AVMProduct:
+        default: Baseline Product Name
+      MergeAddOn:
+        default: Auto Deploy Add-On Product
+      DOMAINNAME:
+        default: Elasticsearch Domain name
+      DomainAdminEmail:
+        default: Elasticsearch notification address
+      ClusterSize:
+        default: Elasticsearch Cluster Size
+      CognitoAdminEmail:
+        default: Cognito user email address
+      SpokeRegions:
+        default: Centralized Logging Spoke Regions
+
+
+Mappings:
+  BucketConfiguration:
+    SourceBucketName:
+      Name: solutions-reference
+    SourceKeyName:
+      Name: aws-landing-zone/v2.3.0/add-on/aws-centralized-logging-solution.zip
+    DestinationKeyName:
+      Name: aws-landing-zone-configuration.zip
+  LambdaFunction:
+    Logging:
+      Level: 'info'
+
+Resources:
+  LandingZoneAddOnDeploymentLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          log_level: !FindInMap [LambdaFunction, Logging, Level]
+      Code:
+        S3Bucket: !Sub solutions-${AWS::Region}
+        S3Key: aws-landing-zone/v2.3.0/aws-landing-zone-add-on-config-deployer.zip
+      Description: AWS Landing Zone Add-On Deployment Lambda
+      Handler: add_on_config_deployer.lambda_handler
+      MemorySize: '512'
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LandingZoneDeploymentLambdaRole
+      Runtime: python3.6
+      Timeout: '300'
+      TracingConfig:
+          Mode: Active
+  LandingZoneAddOnConfigDeployer:
+    Type: Custom::AddOnConfigDeployer
+    Properties:
+      bucket_config:
+        destination_bucket_name: !Sub aws-landing-zone-configuration-${AWS::AccountId}-${AWS::Region}
+        destination_s3_key: !FindInMap [BucketConfiguration, DestinationKeyName, Name]
+        source_bucket_name: !FindInMap [BucketConfiguration, SourceBucketName, Name]
+        source_s3_key: !FindInMap [BucketConfiguration, SourceKeyName, Name]
+        merge_add_on: !Ref MergeAddOn
+      find_replace:
+        - file_name: user-input.yaml
+          parameters:
+            region: !Ref Region
+            core_ou: !Ref OUName
+            core_account: !Ref AccountName
+            avm_products: !Ref AVMProduct
+            domain_name: !Ref DOMAINNAME
+            domain_admin_email: !Ref DomainAdminEmail
+            cognito_admin_email: !Ref CognitoAdminEmail
+            cluster_size: !Ref ClusterSize
+            spoke_regions: !Ref SpokeRegions
+            cloud_trail_region: !Sub ${AWS::Region} 
+      ServiceToken: !GetAtt LandingZoneAddOnDeploymentLambda.Arn

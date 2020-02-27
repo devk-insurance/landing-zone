@@ -52,7 +52,10 @@ class STS(object):
         except ClientError as e:
             self.logger.exception(e.response['Error']['Code'])
             if e.response['Error']['Code'] == 'AccessDenied':
-                return {'Error': 'AccessDenied'}
+                return {'Error': 'AWS STS AssumeRole Failure: Access Denied.'}
+            elif e.response['Error']['Code'] == 'RegionDisabledException':
+                return {'Error': 'An error occurred (RegionDisabledException) when calling the AssumeRole operation: '
+                                 'STS is not activated in this region for this account.'}
             else:
                 message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                            'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
