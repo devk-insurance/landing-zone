@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: {{manifest.portfolios[portfolio_index].products[product_index].name}}
+
+Parameters:
+  AccountName:
+    Description: Name of the Account to deploy AWS Centralized Logging Solution
+    Type: String
+    AllowedValues:
+      {%- for ou in manifest.organizational_units %}
+        {%- for account in ou.core_accounts %}
+          {%- if account.email %}
+      - {{ account.name }}
+          {%- endif %}
+        {%- endfor %}
+      {%- endfor %}
+
+  Region:
+    Default: {{manifest.region}}
+    Description: Region to deploy this stack
+    Type: String
+
+  DOMAINNAME:
+    Description: Name for the Amazon ES domain that this template will create. Domain names must start with a lowercase letter and must be between 3 and 28 characters. Valid characters are a-z (lowercase only), 0-9.
+    Type: String
+    Default: centralizedlogging
+
+  # Email address for the Elasticsearch domain admin
+  DomainAdminEmail:
+    Description: An email address to send Amazon Elasticsearch service CloudWatch alarm notifications
+    Type: String
+    Default: esdomainadmin@example.com
+    AllowedPattern: ^[_A-Za-z0-9-\+\.]+(\.[_A-Za-z0-9-]+)*@[A-Za-z0-9-]+(\.[A-Za-z0-9]+)*(\.[A-Za-z]{2,})$
+
+  # Email address for Cognito Admin user
+  CognitoAdminEmail:
+    Description: Email address for creating a Cognito user to access Kibana dashboard
+    Type: String
+    Default: cognitoadmin@example.com
+    AllowedPattern: ^[_A-Za-z0-9-\+\.]+(\.[_A-Za-z0-9-]+)*@[A-Za-z0-9-]+(\.[A-Za-z0-9]+)*(\.[A-Za-z]{2,})$
+
+  # ES cluster size
+  ClusterSize:
+    Description: Amazon ES cluster size; small (2 data nodes), medium (4 data nodes), large (10 data nodes)
+    Type: String
+    Default: Small
+    AllowedValues:
+    - Small
+    - Medium
+    - Large
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+         default: Account Selection
+        Parameters:
+          - AccountName
+          - Region
+      - Label:
+          default: AWS Centralized Logging Solution
+        Parameters:
+          - DOMAINNAME
+          - DomainAdminEmail
+          - ClusterSize
+          - CognitoAdminEmail
+
+    ParameterLabels:
+      AccountName:
+        default: Account Name
+      Region:
+        default: Region
+      DOMAINNAME:
+        default: Elasticsearch Domain name
+      DomainAdminEmail:
+        default: Elasticsearch notification address
+      ClusterSize:
+        default: Elasticsearch Cluster Size
+      CognitoAdminEmail:
+        default: Cognito user email address
+
+Mappings:
+  AccountNametoOU:
+    {%- for ou in manifest.organizational_units %}
+        {%- for account in ou.core_accounts %}
+    {{ account.name }}:
+      OU: {{ ou.name }}
+        {%- endfor %}
+    {%- endfor %}
+
+  AccountNametoEmail:
+    {%- for ou in manifest.organizational_units %}
+      {%- for account in ou.core_accounts %}
+        {%- if account.email %}
+    {{ account.name }}:
+      Email: {{ account.email }}
+        {%- endif %}
+      {%- endfor %}
+    {%- endfor %}
+
+Resources:
+#
+# AWS Organizations Custom Resource - Creates one new account
+#
+
+  Organizations:
+    Type: Custom::Organizations
+    Properties:
+      OUName: !FindInMap [AccountNametoOU, !Ref AccountName, OU]
+      AccountName: !Ref AccountName
+      AccountEmail: !FindInMap [AccountNametoEmail, !Ref AccountName, Email]
+      ServiceToken: {{ lambda_arn }}
+
+  StackSetsDeployCentralizedLoggingPrimary:
+    DependsOn:
+      - Organizations
+    Type: Custom::StackInstance  # Deploys the CF template in the member account(s)
+    Properties:
+      StackSetName: AWS-Landing-Zone-Centralized-Logging-Primary
+      RegionList:
+        - !Ref Region
+      AccountList:
+        - !GetAtt 'Organizations.AccountId'
+      TemplateURL: {{ template_url }}
+      Parameters:
+          DOMAINNAME: !Ref DOMAINNAME
+          DomainAdminEmail: !Ref DomainAdminEmail
+          CognitoAdminEmail: !Ref CognitoAdminEmail
+          ClusterSize: !Ref ClusterSize
+          OrgID: !GetAtt 'Organizations.OrganizationId'
+      {% if manifest.portfolios[portfolio_index].products[product_index].ssm_parameters %}
+      SSMParameters:
+      {%- for param in manifest.portfolios[portfolio_index].products[product_index].ssm_parameters %}
+          {{ param.name }}: {{ param.value }}
+      {%- endfor %}
+      {%- endif %}
+      Capabilities: CAPABILITY_NAMED_IAM
+      ServiceToken: {{ lambda_arn }}

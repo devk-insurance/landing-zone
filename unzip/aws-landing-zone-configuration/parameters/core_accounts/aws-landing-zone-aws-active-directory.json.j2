@@ -1,0 +1,52 @@
+[
+  {
+      "ParameterKey": "DomainAdminPassword",
+      "ParameterValue": "$[alfred_genpass_12]",
+      "ssm_parameters": [
+        {
+          "name": "/org/directory_service/domain_admin_password",
+          "value": "$[Password]"
+        }
+      ]
+  },
+  {
+      "ParameterKey": "DomainDNSName",
+      "ParameterValue": {{ domain_dns_name }}
+  },
+  {
+      "ParameterKey": "DomainNetBIOSName",
+      "ParameterValue": {{ domain_net_bios_name }}
+  },
+  {
+      "ParameterKey": "PublicSubnet1CIDR",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/public_subnet1_cidr]"
+  },
+  {
+      "ParameterKey": "PrivateSubnet1CIDR",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/private_subnet1_cidr]"
+  },
+  {
+      "ParameterKey": "PrivateSubnet1ID",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/private_subnet1_id]"
+  },
+  {
+      "ParameterKey": "PublicSubnet2CIDR",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/public_subnet2_cidr]"
+  },
+  {
+      "ParameterKey": "PrivateSubnet2CIDR",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/private_subnet2_cidr]"
+  },
+    {
+      "ParameterKey": "PrivateSubnet2ID",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/private_subnet2_id]"
+  },
+  {
+      "ParameterKey": "VPCCIDR",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/vpc_cidr]"
+  },
+  {
+      "ParameterKey": "VPCID",
+      "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/vpc_id]"
+  }
+]

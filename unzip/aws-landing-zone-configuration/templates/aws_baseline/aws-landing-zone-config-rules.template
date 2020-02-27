@@ -1,0 +1,458 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Enables an AWS Landing Zone account baseline AWS Config rules.
+
+Parameters:
+  EnableEncryptedVolumesRule:
+    Type: String
+    Description: "Enables the AWS managed encrypted-volumes config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  EnableRdsEncryptionRule:
+    Type: String
+    Description: "Enables the AWS managed rds-storage-encrypted config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  EnableS3PublicReadRule:
+    Type: String
+    Description: "Enables the AWS managed s3-bucket-public-read-prohibited config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  EnableS3PublicWriteRule:
+    Type: String
+    Description: "Enables the AWS managed s3-bucket-public-write-prohibited config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  EnableS3ServerSideEncryptionRule:
+    Type: String
+    Description: "Enables the AWS managed s3-bucket-server-side-encryption-enabled config rule. To enable, change the parameter value to true."
+    Default: false
+    AllowedValues:
+    - true
+    - false
+  EnableRootMfaRule:
+    Type: String
+    Description: "Enables the AWS managed root-account-mfa-enabled config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  EnableIamPasswordPolicyRule:
+    Type: String
+    Description: "Enables the AWS managed iam-password-policy config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  EnableRestrictedCommonPortsRule:
+    Type: String
+    Description: "Enables the AWS managed restricted-common-ports config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  EnableRestrictedSshRule:
+    Type: String
+    Description: "Enables the AWS managed restricted-ssh config rule. To disable, change the parameter value to false."
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  KMSId:
+    Type: String
+    Description: "[Optional] Id or ARN of the KMS key that is used to encrypt the volume."
+    Default: ""
+  MaximumExecutionFrequency:
+    Type: String
+    Default: TwentyFour_Hours
+    Description: The frequency that you want AWS Config to run evaluations for the
+      rule.
+    MinLength: '1'
+    ConstraintDescription: This parameter is required.
+    AllowedValues:
+    - One_Hour
+    - Three_Hours
+    - Six_Hours
+    - Twelve_Hours
+    - TwentyFour_Hours
+  RequireUppercaseCharacters:
+    Type: String
+    Default: 'true'
+    Description: Require at least one uppercase character in password.
+    AllowedValues:
+    - true
+    - false
+  RequireLowercaseCharacters:
+    Type: String
+    Default: 'true'
+    Description: Require at least one lowercase character in password.
+    AllowedValues:
+    - true
+    - false
+  RequireSymbols:
+    Type: String
+    Default: 'true'
+    Description: Require at least one symbol in password.
+    AllowedValues:
+    - true
+    - false
+  RequireNumbers:
+    Type: String
+    Default: 'true'
+    Description: Require at least one number in password.
+    AllowedValues:
+    - true
+    - false
+  MinimumPasswordLength:
+    Type: String
+    Default: '12'
+    Description: Password minimum length.
+  PasswordReusePrevention:
+    Type: String
+    Default: '6'
+    Description: Number of passwords before allowing reuse.
+  MaxPasswordAge:
+    Type: String
+    Default: '90'
+    Description: Number of days before password expiration.
+  blockedPort1:
+    Type: String
+    Default: '20'
+    Description: Blocked TCP port number.
+  blockedPort2:
+    Type: String
+    Default: '21'
+    Description: Blocked TCP port number.
+  blockedPort3:
+    Type: String
+    Default: '3389'
+    Description: Blocked TCP port number.
+  blockedPort4:
+    Type: String
+    Default: '3306'
+    Description: Blocked TCP port number.
+  blockedPort5:
+    Type: String
+    Default: '4333'
+    Description: Blocked TCP port number.
+
+Conditions:
+  EnableEncryptedVolumes: !Equals
+    - !Ref EnableEncryptedVolumesRule
+    - 'true'
+  EnableRdsEncryption: !Equals
+    - !Ref EnableRdsEncryptionRule
+    - 'true'
+  EnableS3PublicRead: !Equals
+    - !Ref EnableS3PublicReadRule
+    - 'true'
+  EnableS3PublicWrite: !Equals
+    - !Ref EnableS3PublicWriteRule
+    - 'true'
+  EnableS3ServerSideEncryption: !Equals
+    - !Ref EnableS3ServerSideEncryptionRule
+    - 'true'
+  EnableRootMfa: !Equals
+    - !Ref EnableRootMfaRule
+    - 'true'
+  EnableIamPasswordPolicy: !Equals
+    - !Ref EnableIamPasswordPolicyRule
+    - 'true'
+  EnableRestrictedCommonPortsPolicy: !Equals
+    - !Ref EnableRestrictedCommonPortsRule
+    - 'true'
+  EnableRestrictedSshPolicy: !Equals
+    - !Ref EnableRestrictedSshRule
+    - 'true'
+  HasKMSKeyId: !Not
+    - !Equals
+      - !Ref KMSId
+      - ""
+  RequireUppercaseCharacters:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: RequireUppercaseCharacters
+  RequireLowercaseCharacters:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: RequireLowercaseCharacters
+  RequireSymbols:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: RequireSymbols
+  RequireNumbers:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: RequireNumbers
+  MinimumPasswordLength:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: MinimumPasswordLength
+  PasswordReusePrevention:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: PasswordReusePrevention
+  MaxPasswordAge:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: MaxPasswordAge
+  blockedPort1:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: blockedPort1
+  blockedPort2:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: blockedPort2
+  blockedPort3:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: blockedPort3
+  blockedPort4:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: blockedPort4
+  blockedPort5:
+    Fn::Not:
+    - Fn::Equals:
+      - ''
+      - Ref: blockedPort5
+
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Config Rules
+      Parameters:
+      - EnableEncryptedVolumesRule
+      - EnableRdsEncryptionRule
+      - EnableS3PublicReadRule
+      - EnableS3PublicWriteRule
+      - EnableS3ServerSideEncryptionRule
+      - EnableRootMfaRule
+      - EnableIamPasswordPolicyRule
+      - EnableRestrictedCommonPortsRule
+      - EnableRestrictedSshRule
+    - Label:
+        default: Misc Parameters
+      Parameters:
+      - KMSId
+      - MaximumExecutionFrequency
+    - Label:
+        default: IAM Password Policy
+      Parameters:
+      - RequireUppercaseCharacters
+      - RequireLowercaseCharacters
+      - RequireSymbols
+      - RequireNumbers
+      - MinimumPasswordLength
+      - PasswordReusePrevention
+      - MaxPasswordAge
+    - Label:
+        default: Restricted Common Ports
+      Parameters:
+      - blockedPort1
+      - blockedPort2
+      - blockedPort3
+      - blockedPort4
+      - blockedPort5
+
+Resources:
+  CheckForEncryptedVolumes:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableEncryptedVolumes
+    Properties:
+      Description: Checks whether EBS volumes that are in an attached state are encrypted.
+      Source:
+        Owner: AWS
+        SourceIdentifier: ENCRYPTED_VOLUMES
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::Volume
+      InputParameters:
+        kmsId: !If
+          - HasKMSKeyId
+          - !Ref KMSId
+          - !Ref AWS::NoValue
+
+  CheckForRdsEncryption:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableRdsEncryption
+    Properties:
+      Description: Checks whether storage encryption is enabled for your RDS DB instances.
+      Source:
+        Owner: AWS
+        SourceIdentifier: RDS_STORAGE_ENCRYPTED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::RDS::DBInstance
+      InputParameters:
+        kmsId: !If
+          - HasKMSKeyId
+          - !Ref KMSId
+          - !Ref AWS::NoValue
+
+  CheckForS3PublicRead:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableS3PublicRead
+    Properties:
+      Description: Checks that your S3 buckets do not allow public read access. If an S3 bucket policy or bucket ACL allows public read access, the bucket is noncompliant.
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_PUBLIC_READ_PROHIBITED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+
+  CheckForS3PublicWrite:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableS3PublicWrite
+    Properties:
+      Description: Checks that your S3 buckets do not allow public write access. If an S3 bucket policy or bucket ACL allows public write access, the bucket is noncompliant.
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_PUBLIC_WRITE_PROHIBITED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+
+  CheckForS3ServerSideEncryption:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableS3ServerSideEncryption
+    Properties:
+      Description: Checks for explicit denies on put-object requests without server side encryption.
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+
+  CheckForRootMfa:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableRootMfa
+    Properties:
+      Description: Checks whether the root user of your AWS account requires multi-factor authentication for console sign-in.
+      Source:
+        Owner: AWS
+        SourceIdentifier: ROOT_ACCOUNT_MFA_ENABLED
+      MaximumExecutionFrequency:
+        Ref: MaximumExecutionFrequency
+
+  CheckForIamPasswordPolicy:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableIamPasswordPolicy
+    Properties:
+      Description: Checks whether the account password policy for IAM users meets the specified requirements.
+      Source:
+        Owner: AWS
+        SourceIdentifier: IAM_PASSWORD_POLICY
+      InputParameters:
+        RequireUppercaseCharacters:
+          Fn::If:
+          - RequireUppercaseCharacters
+          - Ref: RequireUppercaseCharacters
+          - Ref: AWS::NoValue
+        RequireLowercaseCharacters:
+          Fn::If:
+          - RequireLowercaseCharacters
+          - Ref: RequireLowercaseCharacters
+          - Ref: AWS::NoValue
+        RequireSymbols:
+          Fn::If:
+          - RequireSymbols
+          - Ref: RequireSymbols
+          - Ref: AWS::NoValue
+        RequireNumbers:
+          Fn::If:
+          - RequireNumbers
+          - Ref: RequireNumbers
+          - Ref: AWS::NoValue
+        MinimumPasswordLength:
+          Fn::If:
+          - MinimumPasswordLength
+          - Ref: MinimumPasswordLength
+          - Ref: AWS::NoValue
+        PasswordReusePrevention:
+          Fn::If:
+          - PasswordReusePrevention
+          - Ref: PasswordReusePrevention
+          - Ref: AWS::NoValue
+        MaxPasswordAge:
+          Fn::If:
+          - MaxPasswordAge
+          - Ref: MaxPasswordAge
+          - Ref: AWS::NoValue
+      MaximumExecutionFrequency:
+        Ref: MaximumExecutionFrequency
+
+  CheckForRestrictedCommonPortsPolicy:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableRestrictedCommonPortsPolicy
+    Properties:
+      Description: Checks whether security groups that are in use disallow unrestricted
+        incoming TCP traffic to the specified ports.
+      InputParameters:
+        blockedPort1:
+          Fn::If:
+          - blockedPort1
+          - Ref: blockedPort1
+          - Ref: AWS::NoValue
+        blockedPort2:
+          Fn::If:
+          - blockedPort2
+          - Ref: blockedPort2
+          - Ref: AWS::NoValue
+        blockedPort3:
+          Fn::If:
+          - blockedPort3
+          - Ref: blockedPort3
+          - Ref: AWS::NoValue
+        blockedPort4:
+          Fn::If:
+          - blockedPort4
+          - Ref: blockedPort4
+          - Ref: AWS::NoValue
+        blockedPort5:
+          Fn::If:
+          - blockedPort5
+          - Ref: blockedPort5
+          - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+        - AWS::EC2::SecurityGroup
+      Source:
+        Owner: AWS
+        SourceIdentifier: RESTRICTED_INCOMING_TRAFFIC
+
+  CheckForRestrictedSshPolicy:
+    Type: AWS::Config::ConfigRule
+    Condition: EnableRestrictedSshPolicy
+    Properties:
+      Description: Checks whether security groups that are in use disallow unrestricted
+        incoming SSH traffic.
+      Scope:
+        ComplianceResourceTypes:
+        - AWS::EC2::SecurityGroup
+      Source:
+        Owner: AWS
+        SourceIdentifier: INCOMING_SSH_DISABLED

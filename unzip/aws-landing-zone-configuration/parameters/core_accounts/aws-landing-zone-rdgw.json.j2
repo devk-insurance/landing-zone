@@ -1,0 +1,82 @@
+[
+{
+    "ParameterKey": "DomainAdminPassword",
+    "ParameterValue": "_get_ssm_secure_string_/org/directory_service/domain_admin_password"
+},
+{
+    "ParameterKey": "DomainAdminUser",
+    "ParameterValue": "$[alfred_ssm_/org/directory_service/domain_admin_user]"
+},
+{
+    "ParameterKey": "DomainDNSName",
+    "ParameterValue": "$[alfred_ssm_/org/directory_service/domain_dns_name]"
+},
+{
+    "ParameterKey": "DomainMemberSGID",
+    "ParameterValue": "$[alfred_ssm_/org/directory_service/domain_member_sg_id]"
+},
+{
+    "ParameterKey": "DomainNetBIOSName",
+    "ParameterValue": "$[alfred_ssm_/org/directory_service/domain_netbios_name]"
+},
+{
+    "ParameterKey": "KeyPairName",
+    "ParameterValue": "$[alfred_genkeypair]",
+    "ssm_parameters": [
+      {
+        "name": "/org/member/sharedservices/rdgw/ec2-key-material",
+        "value": "$[KeyMaterial]"
+      },
+      {
+        "name": "/org/member/sharedservices/rdgw/ec2-key-fingerprint",
+        "value": "$[KeyFingerprint]"
+      },
+      {
+        "name": "/org/member/sharedservices/rdgw/ec2-key-name",
+        "value": "$[KeyName]"
+      }
+    ]
+},
+{
+    "ParameterKey": "NumberOfRDGWHosts",
+    "ParameterValue": {{ no_of_rdgw_hosts }}
+},
+{
+    "ParameterKey": "RDGWInstanceType",
+    "ParameterValue": {{ rdgw_instance_type }}
+},
+{
+    "ParameterKey": "PublicSubnet1ID",
+    "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/public_subnet1_id]"
+},
+{
+    "ParameterKey": "PublicSubnet2ID",
+    "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/public_subnet2_id]"
+},
+{
+    "ParameterKey": "RDGWCIDR",
+    "ParameterValue": {{ rdgw_cidr }}
+},
+{
+    "ParameterKey": "VPCID",
+    "ParameterValue": "$[alfred_ssm_/org/member/sharedservices/vpc_id]"
+},
+{
+    "ParameterKey": "ConnectorPassword",
+    "ParameterValue": "$[alfred_genpass_12]",
+    "ssm_parameters": [
+      {
+        "name": "/org/directory_service/connector_password",
+        "value": "$[Password]"
+      }
+    ]
+},
+{
+    "ParameterKey": "ConnectorUser",
+    "ParameterValue": "connector"
+},
+{
+    "ParameterKey": "ConnectorGroup",
+    "ParameterValue": "Connectors"
+}
+]

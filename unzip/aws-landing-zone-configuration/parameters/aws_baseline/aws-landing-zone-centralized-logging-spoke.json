@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "ESDomain",
+    "ParameterValue": "$[alfred_ssm_/org/member/centrallogging/es_domain]"
+  },
+  {
+    "ParameterKey": "ClusterSize",
+    "ParameterValue": "Small"
+  },
+  {
+    "ParameterKey": "MasterRole",
+    "ParameterValue": "$[alfred_ssm_/org/member/centrallogging/master_role]"
+  },
+  {
+      "ParameterKey": "CloudWatchLogsGroupName",
+      "ParameterValue": "CloudTrail/Landing-Zone-Logs"
+  },
+  {
+    "ParameterKey": "DemoTemplate",
+    "ParameterValue": "No"
+  },
+  {
+    "ParameterKey": "DemoVPC",
+    "ParameterValue": "10.250.0.0/16"
+  },
+  {
+    "ParameterKey": "DemoSubnet",
+    "ParameterValue": "10.250.250.0/24"
+  }
+]

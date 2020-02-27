@@ -1,0 +1,70 @@
+[
+  {
+    "ParameterKey": "LogGroupName",
+    "ParameterValue": "CloudTrail/Landing-Zone-Logs"
+  },
+  {
+    "ParameterKey": "LogsRetentionInDays",
+    "ParameterValue": "14"
+  },
+  {
+    "ParameterKey": "AlarmNotificationTopic",
+    "ParameterValue": "$[alfred_ssm_/org/primary/sns_notification_arn]"
+  },
+  {
+    "ParameterKey": "NotifyDisplayName",
+    "ParameterValue": "LZNotify"
+  },
+  {
+    "ParameterKey": "NotifyTopicName",
+    "ParameterValue": "AWS-Landing-Zone-Security-Notifications"
+  },
+  {
+    "ParameterKey": "EnableSecurityGroupChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableNetworkAclChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableGatewayChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableVpcChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableEc2InstanceChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableEc2LargeInstanceChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableCloudTrailChangeAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableConsoleSignInFailureAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableAuthorizationFailureAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableIamPolicyChangesAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableRootLoginAlarm",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableConfigRuleComplianceChangeAlarm",
+    "ParameterValue": "true"
+  }
+]

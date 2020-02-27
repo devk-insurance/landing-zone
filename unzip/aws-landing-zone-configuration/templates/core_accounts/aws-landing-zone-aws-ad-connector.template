@@ -1,0 +1,581 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy AD Connector
+
+Parameters:
+  PrimaryAccountName:
+    Description: Account name
+    Type: String
+    Default: master
+  PrimaryAccountID:
+    Description: Account ID
+    Type: String
+  PrimaryAccountVPCID:
+    Description: VPC ID
+    Type: String
+  PrimaryAccountPrivateRouteTableIDs:
+    Description: Route table ID
+    Type: String
+  SharedServiceAccountID:
+    Description: Account ID
+    Type: String
+  SharedServiceAccountPrivateRouteTableIDs:
+    Description: Route table ID
+    Type: String
+  SharedServiceVPCID:
+    Description: VPC ID
+    Type: String
+  SharedServiceVPCRegion:
+    Description: VPC Region
+    Type: String
+  ADConnectorSize:
+    Description: The size of the AD connector. Small or Large
+    Type: String
+    Default: Small
+    AllowedValues:
+      - Small
+      - Large
+  PrivateSubnet1ID:
+    Description: ID of the private subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)
+    Type: String
+  PrivateSubnet2ID:
+    Description: ID of the private subnet 2 in Availability Zone 2 (e.g., subnet-a0246dcd)
+    Type: String
+  DomainDNSName:
+    Description: Fully qualified domain name (FQDN) of the forest root domain e.g. example.com
+    Type: String
+    Default: example.com
+  DomainNetBIOSName:
+    Description: NetBIOS name of the domain (upto 15 characters) for users of earlier versions of Windows e.g. EXAMPLE
+    Type: String
+    Default: example
+  ConnectorUserName:
+    Description: The username of an account for the existing directory that is used by the AD connector.
+    Type: String
+    Default: connector
+  ConnectorPassword:
+    Description: Password for the connector user
+    Type: String
+    NoEcho: true
+  ADServer1PrivateIP:
+    Description: AD Server 1 Private IP Address
+    Type: String
+  ADServer2PrivateIP:
+    Description: AD Server 2 Private IP Address
+    Type: String
+
+Resources:
+#
+#  LandingZone lambda function & Role
+#
+
+  LandingZoneLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LandingZoneLambdaRoleADConnector
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: LandingZoneLambdaADConnector
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ['', ['arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId',
+                      ':log-group:/aws/lambda/*']]
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - states:DescribeStateMachine
+                  - states:DescribeStateMachineForExecution
+                  - states:DescribeExecution
+                  - states:ListExecutions
+                  - states:StartExecution
+                  - states:StopExecution
+                Resource:
+                  - !Ref ADConnectorStateMachine
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeRegions
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - ec2:DeleteInternetGateway
+                  - ec2:DeleteSubnet
+                  - ec2:DeleteVpc
+                  - ec2:DetachInternetGateway
+                  - ec2:CreateKeyPair
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeVPCPeeringConnections
+                  - ec2:CreateVPCPeeringConnection
+                  - ec2:AcceptVPCPeeringConnection
+                  - ec2:DeleteVPCPeeringConnection
+                  - ec2:CreateRoute
+                  - ec2:ReplaceRoute
+                  - ec2:DeleteRoute
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:DeleteParameter
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource: 'arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole'
+
+  LandingZoneLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          log_level: 'info'
+          sm_arn_ad_connector: !Ref ADConnectorStateMachine
+      Code:
+        S3Bucket: !Sub solutions-${AWS::Region}
+        S3Key: aws-landing-zone/v1.0.2/aws-landing-zone-avm.zip
+      Description: AWS Lambda-backed Custom Resources for AVM
+      FunctionName: LandingZoneADConnector
+      Handler: lambda_custom_resource.lambda_handler
+      MemorySize: '1024'
+      Role: !GetAtt 'LandingZoneLambdaRole.Arn'
+      Runtime: python3.6
+      Timeout: '300'
+      TracingConfig:
+          Mode: Active
+
+  StateMachineLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: StateMachineLambdaRoleADConnector
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: StateMachineLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ['', ['arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId',
+                      ':log-group:/aws/lambda/*']]
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:DeleteParameter
+                  - ssm:DescribeParameters
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                  - iam:PutRolePolicy
+                  - iam:UpdateRoleDescription
+                  - iam:DeleteServiceLinkedRole
+                  - iam:GetServiceLinkedRoleDeletionStatus
+                  - iam:GetGroup
+                  - iam:PassRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeRegions
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - ec2:DeleteInternetGateway
+                  - ec2:DeleteSubnet
+                  - ec2:DeleteVpc
+                  - ec2:DetachInternetGateway
+                  - ec2:CreateKeyPair
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - ec2:CreateSecurityGroup
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:DeleteSecurityGroup
+                  - ec2:DeleteNetworkInterface
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupEgress
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ds:ConnectDirectory
+                  - ds:DescribeDirectories
+                  - ds:DeleteDirectory
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource: 'arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole'
+
+  StateMachineLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          log_level: 'info'
+      Code:
+        S3Bucket: !Sub solutions-${AWS::Region}
+        S3Key: aws-landing-zone/v1.0.2/aws-landing-zone-state-machine.zip
+      Description: AWS Landing Zone State Machine Handler
+      FunctionName: LandingZoneStateMachineLambdaADConnector
+      Handler: state_machine_router.lambda_handler
+      MemorySize: '1024'
+      Role: !GetAtt 'StateMachineLambdaRole.Arn'
+      Runtime: python3.6
+      Timeout: '300'
+      TracingConfig:
+          Mode: Active
+
+  StateMachineRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub "states.${AWS::Region}.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "lambda"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+
+  ADConnectorStateMachine:
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      StateMachineName: LandingZoneADConnectorStateMachine
+      RoleArn: !GetAtt 'StateMachineRole.Arn'
+      DefinitionString:
+        Fn::Sub: |-
+          {
+            "Comment": "A state machine to launch or terminate AD Connector",
+            "StartAt": "Describe Directory Pass",
+            "States": {
+              "Describe Directory Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "describe_directory"
+                },
+                "ResultPath": "$.params",
+                "Next": "Describe Directory"
+              },
+              "Describe Directory": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "AD Connector: Create or Delete?"
+              },
+              "AD Connector: Create or Delete?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "And": [
+                      {
+                        "Or": [
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Create"
+                          },
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Update"
+                          }
+                        ]
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "no"
+                      }
+                    ],
+                    "Next": "Create AD Connector Pass"
+                  },
+                  {
+                    "And": [
+                      {
+                        "Or": [
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Create"
+                          },
+                          {
+                            "Variable": "$.RequestType",
+                            "StringEquals": "Update"
+                          }
+                        ]
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "yes"
+                      }
+                    ],
+                    "Next": "Send Success Pass"
+                  },
+                  {
+                    "And": [
+                      {
+                        "Variable": "$.RequestType",
+                        "StringEquals": "Delete"
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "yes"
+                      }
+                    ],
+                    "Next": "Delete AD Connector Pass"
+                  },
+                  {
+                    "And": [
+                      {
+                        "Variable": "$.RequestType",
+                        "StringEquals": "Delete"
+                      },
+                      {
+                        "Variable": "$.DirectoryExists",
+                        "StringEquals": "no"
+                      }
+                    ],
+                    "Next": "Send Success Pass"
+                  }
+                ]
+              },
+              "Delete AD Connector Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "delete_directory"
+                },
+                "ResultPath": "$.params",
+                "Next": "Delete AD Connector"
+              },
+              "Delete AD Connector": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Check AD Connector Pass"
+              },
+              "Create AD Connector Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "connect_directory"
+                },
+                "ResultPath": "$.params",
+                "Next": "Create AD Connector"
+              },
+              "Create AD Connector": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Check AD Connector Pass"
+              },
+              "Check AD Connector Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "ADConnector",
+                  "FunctionName": "check_directory_status"
+                },
+                "ResultPath": "$.params",
+                "Next": "Check AD Connector"
+              },
+              "Check AD Connector": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Check Complete?"
+              },
+              "Check Complete?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Or": [
+                      {
+                        "Variable": "$.CreateStatus",
+                        "StringEquals": "Complete"
+                      },
+                      {
+                        "Variable": "$.DeleteStatus",
+                        "StringEquals": "Complete"
+                      }
+                    ],
+                    "Next": "Send Success Pass"
+                  },
+                  {
+                    "Or": [
+                      {
+                        "Variable": "$.CreateStatus",
+                        "StringEquals": "Fail"
+                      },
+                      {
+                        "Variable": "$.DeleteStatus",
+                        "StringEquals": "Fail"
+                      }
+                    ],
+                    "Next": "Send Failed Pass"
+                  }
+                ],
+                "Default": "Check AD Connector Wait"
+              },
+              "Check AD Connector Wait": {
+                "Type": "Wait",
+                "Seconds": 10,
+                "Next": "Check AD Connector Pass"
+              },
+              "Send Success Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "send_success_to_cfn"
+                },
+                "ResultPath": "$.params",
+                "Next": "Send Success Response"
+              },
+              "Send Success Response": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Success"
+              },
+              "Success": {
+                "Type": "Succeed"
+              },
+              "Send Failed Pass": {
+                "Type": "Pass",
+                "Result": {
+                  "ClassName": "GeneralFunctions",
+                  "FunctionName": "send_failure_to_cfn"
+                },
+                "ResultPath": "$.params",
+                "Next": "Send Failed Response"
+              },
+              "Send Failed Response": {
+                "Type": "Task",
+                "Resource": "${StateMachineLambda.Arn}",
+                "TimeoutSeconds": 300,
+                "HeartbeatSeconds": 60,
+                "Next": "Failed"
+              },
+              "Failed": {
+                "Type": "Fail"
+              }
+            }
+          }
+
+
+#
+# VPC Custom Resource - Peering
+#
+
+  VPCPeering:
+    Type: Custom::VPCPeering
+    Properties:
+      PeeringConnectionKeyPrefix: /org/member/sharedservices
+      PeeringAccountID: !Ref SharedServiceAccountID
+      PeeringVPCID: !Ref SharedServiceVPCID
+      PeeringRegion: !Ref SharedServiceVPCRegion
+      AccountName: !Ref PrimaryAccountName
+      AccountID : !Ref PrimaryAccountID
+      VPCID : !Ref PrimaryAccountVPCID
+      Region: !Ref 'AWS::Region'
+      ServiceToken: !GetAtt LandingZoneLambda.Arn
+
+#
+# VPC Custom Resource - Peer Routing
+#
+
+  PrimaryVPCPeerRouting:
+    Type: Custom::VPCPeering
+    DependsOn:
+      - VPCPeering
+    Properties:
+      AccountID : !Ref PrimaryAccountID
+      Region: !Ref 'AWS::Region'
+      RouteTableIDs: !Ref PrimaryAccountPrivateRouteTableIDs
+      PeerConnectionID : !GetAtt 'VPCPeering.PeerConnectionID'
+      VPCCIDR: !GetAtt 'VPCPeering.RequesterVPCCIDR'
+      ServiceToken: !GetAtt LandingZoneLambda.Arn
+
+  SharedVPCPeerRouting:
+    Type: Custom::VPCPeering
+    DependsOn:
+      - VPCPeering
+    Properties:
+      AccountID: !Ref SharedServiceAccountID
+      Region: !Ref SharedServiceVPCRegion
+      RouteTableIDs: !Ref SharedServiceAccountPrivateRouteTableIDs
+      PeerConnectionID : !GetAtt 'VPCPeering.PeerConnectionID'
+      VPCCIDR: !GetAtt 'VPCPeering.AccepterVPCCIDR'
+      ServiceToken: !GetAtt LandingZoneLambda.Arn
+
+  ADConnector:
+    Type: Custom::ADConnector
+    DependsOn:
+      - VPCPeering
+      - PrimaryVPCPeerRouting
+      - SharedVPCPeerRouting
+    Properties:
+      ADConnectorSize: !Ref ADConnectorSize
+      DomainDNSName: !Ref DomainDNSName
+      DomainNetBIOSName: !Ref DomainNetBIOSName
+      ConnectorUserName: !Ref ConnectorUserName
+      ConnectorPassword: !Ref ConnectorPassword
+      VPCId: !Ref PrimaryAccountVPCID
+      Subnet1Id: !Ref PrivateSubnet1ID
+      Subnet2Id: !Ref PrivateSubnet2ID
+      DNSIp1: !Ref ADServer1PrivateIP
+      DNSIp2: !Ref ADServer2PrivateIP
+      ServiceToken: !GetAtt LandingZoneLambda.Arn

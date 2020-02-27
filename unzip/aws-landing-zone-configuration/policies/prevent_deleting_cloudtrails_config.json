@@ -1,0 +1,26 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "*",
+            "Resource": "*"
+        },
+        {
+            "Effect": "Deny",
+            "Action": [
+                "config:Delete*",
+                "config:Stop*"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Deny",
+            "Action": [
+                "cloudtrail:Delete*",
+                "cloudtrail:Stop*"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

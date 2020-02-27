@@ -1,0 +1,548 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: {{manifest.portfolios[portfolio_index].products[product_index].description}}
+
+Parameters:
+  AccountName:
+    Description: Name for the Account
+    Type: String
+    MinLength: 1
+    MaxLength: 50
+  AccountEmail:
+    Description: Email for the Account
+    Type: String
+    MinLength: 6
+    MaxLength: 64
+    AllowedPattern: ^[_A-Za-z0-9-\+\.]+(\.[_A-Za-z0-9-]+)*@[A-Za-z0-9-]+(\.[A-Za-z0-9]+)*(\.[A-Za-z]{2,})$
+    ConstraintDescription: Account Email can contain only ASCII characters. This must be in the format of something@email.com
+  OrgUnitName:
+    Description: Name of Organizations Unit
+    Type: String
+    AllowedValues:
+      {%- for ou in manifest.organizational_units %}
+        {%- for product_name in ou['include_in_baseline_products'] %}
+          {%- if product_name == manifest.portfolios[portfolio_index].products[product_index].name %}
+      - {{ ou['name'] }}
+          {%- endif %}
+        {%- endfor %}
+      {%- endfor %}
+  VPCOptions:
+    Type: String
+    Default: No-Primary-VPC
+    Description: VPC options
+    AllowedValues:
+      - No-Primary-VPC
+      - 1-Tier-2-AZ-Public-VPC
+      - 1-Tier-3-AZ-Public-VPC
+      - 1-Tier-4-AZ-Public-VPC
+      - 1-Tier-2-AZ-Private-VPC
+      - 1-Tier-3-AZ-Private-VPC
+      - 1-Tier-4-AZ-Private-VPC
+      - 2-Tier-2-AZ-Public-Private-VPC
+      - 2-Tier-3-AZ-Public-Private-VPC
+      - 2-Tier-4-AZ-Public-Private-VPC
+      - 3-Tier-2-AZ-Public-Private-Private-VPC
+      - 3-Tier-3-AZ-Public-Private-Private-VPC
+      - 3-Tier-4-AZ-Public-Private-Private-VPC
+
+  VPCRegion:
+    Description: VPC Region
+    Type: String
+    AllowedValues:
+      {%- for region in regions %}
+      - {{ region }}
+      {%- endfor %}
+    Default: {{ manifest.region }}
+
+  VPCCidr:
+      Type: String
+      AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+      ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+      Description: CIDR block for the VPC
+      Default: 10.0.0.0/16
+
+  PeerVPC:
+      Type: String
+      Default: No
+      AllowedValues:
+        - Yes
+        - No
+      Description: Would you like to peer this account's Primary VPC's Private Subnets with the Shared Service VPC's Private Subnets?
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+         default: Account Information
+        Parameters:
+          - AccountName
+          - AccountEmail
+          - OrgUnitName
+      - Label:
+          default: Network Information
+        Parameters:
+          - VPCOptions
+          - VPCRegion
+          - VPCCidr
+          - PeerVPC
+    ParameterLabels:
+      AccountName:
+        default: Account Name
+      AccountEmail:
+        default: Account Email
+      OrgUnitName:
+        default: Organization Unit Name
+      VPCOptions:
+        default: Network Type
+      VPCCidr:
+        default: Network CIDR Range
+      PeerVPC:
+        default: Peer with Shared-Services VPC
+      VPCRegion:
+        default: Network Region
+
+#
+# Rules for template Constraints
+#
+
+# Rules:
+#     VPCPeeringRule:
+#       RuleCondition: !Contains [['No-Primary-VPC', '1-Tier-2-AZ-Public-VPC', '1-Tier-3-AZ-Public-VPC', '1-Tier-4-AZ-Public-VPC'], !Ref 'VPCOptions']
+#       Assertions:
+#       - Assert: !Equals [!Ref 'PeerVPC', 'false']
+#         AssertDescription: The VPC must have private subnets to peer with. Choose a supported VPC design for peering or choose no peering.
+
+Mappings:
+  OUToSCPMap:
+    {%- for ou in manifest.organizational_units %}
+    {{ ou.name }}:
+        SCP:
+        {%- for policy in manifest.organization_policies %}
+            {%- if ou.name in policy.apply_to_accounts_in_ou %}
+            - {{ policy.name }}
+            {%- endif %}
+        {%- endfor %}
+    {%- endfor %}
+  VPC:
+    1-Tier-2-AZ-Public-VPC:
+      AvailabilityZones: 2
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+      PrivateSubnets: []
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'false'
+      CreatePublicSubnets: 'true'
+    1-Tier-3-AZ-Public-VPC:
+      AvailabilityZones: 3
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+      PrivateSubnets: []
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'false'
+      CreatePublicSubnets: 'true'
+    1-Tier-4-AZ-Public-VPC:
+      AvailabilityZones: 4
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+          - PublicSubnet4CIDR
+      PrivateSubnets: []
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'false'
+      CreatePublicSubnets: 'true'
+    1-Tier-2-AZ-Private-VPC:
+      AvailabilityZones: 2
+      PublicSubnets: []
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'false'
+    1-Tier-3-AZ-Private-VPC:
+      AvailabilityZones: 3
+      PublicSubnets: []
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+          - PrivateSubnet3ACIDR
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'false'
+    1-Tier-4-AZ-Private-VPC:
+      AvailabilityZones: 4
+      PublicSubnets: []
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+          - PrivateSubnet3ACIDR
+          - PrivateSubnet4ACIDR
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'false'
+    2-Tier-2-AZ-Public-Private-VPC:
+      AvailabilityZones: 2
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'true'
+    2-Tier-3-AZ-Public-Private-VPC:
+      AvailabilityZones: 3
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+          - PrivateSubnet3ACIDR
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'true'
+    2-Tier-4-AZ-Public-Private-VPC:
+      AvailabilityZones: 4
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+          - PublicSubnet4CIDR
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+          - PrivateSubnet3ACIDR
+          - PrivateSubnet4ACIDR
+      CreateAdditionalPrivateSubnets: 'false'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'true'
+    3-Tier-2-AZ-Public-Private-Private-VPC:
+      AvailabilityZones: 2
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+          - PrivateSubnet1BCIDR
+          - PrivateSubnet2BCIDR
+      CreateAdditionalPrivateSubnets: 'true'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'true'
+    3-Tier-3-AZ-Public-Private-Private-VPC:
+      AvailabilityZones: 3
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+          - PrivateSubnet3ACIDR
+          - PrivateSubnet1BCIDR
+          - PrivateSubnet2BCIDR
+          - PrivateSubnet3BCIDR
+      CreateAdditionalPrivateSubnets: 'true'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'true'
+    3-Tier-4-AZ-Public-Private-Private-VPC:
+      AvailabilityZones: 4
+      PublicSubnets:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+          - PublicSubnet4CIDR
+      PrivateSubnets:
+          - PrivateSubnet1ACIDR
+          - PrivateSubnet2ACIDR
+          - PrivateSubnet3ACIDR
+          - PrivateSubnet4ACIDR
+          - PrivateSubnet1BCIDR
+          - PrivateSubnet2BCIDR
+          - PrivateSubnet3BCIDR
+          - PrivateSubnet4BCIDR
+      CreateAdditionalPrivateSubnets: 'true'
+      CreatePrivateSubnets: 'true'
+      CreatePublicSubnets: 'true'
+
+Conditions:
+  CreateVPC: !Not
+    - !Equals
+      - !Ref VPCOptions
+      - No-Primary-VPC
+  PeerVPC: !Equals
+      - !Ref PeerVPC
+      - Yes
+
+Resources:
+
+#
+# Check if AVM was run for this account before
+#
+
+  CheckAVMExistsForAccount:
+    Type: Custom::CheckAVMExistsForAccount
+    Properties:
+      PortfolioName: {{manifest.portfolios[portfolio_index].name}}
+      ProductName: {{manifest.portfolios[portfolio_index].products[product_index].name}}
+      ProdParams:
+        OUName: !Ref OrgUnitName
+        AccountName: !Ref AccountName
+        AccountEmail: !Ref AccountEmail
+      ServiceToken: {{ lambda_arn }}
+
+
+#
+# AWS Organizations Custom Resource - Creates one new account
+#
+
+  Organizations:
+    DependsOn:
+      - CheckAVMExistsForAccount
+    Type: Custom::Organizations
+    Properties:
+      OUName: !Ref OrgUnitName
+      AccountName: !Ref AccountName
+      AccountEmail: !Ref AccountEmail
+      ServiceToken: {{ lambda_arn }}
+      key: {{ uuid }}
+
+#
+# SCP Custom Resource - Detach SCP
+#
+
+  DetachSCP:
+    DependsOn:
+      - Organizations
+    Type: Custom::ServiceControlPolicy
+    Properties:
+      AccountId: !GetAtt 'Organizations.AccountId'
+      PolicyList: !FindInMap [OUToSCPMap, !Ref OrgUnitName, SCP]
+      Operation: Detach
+      ServiceToken: {{ lambda_arn }}
+
+#
+# Cloudformation StackSets Custom Resource
+#
+{%- for resource in manifest.baseline_resources %}
+  {% if resource.deploy_method == 'stack_set' and resource.parameter_override != 'true' %}
+    {% if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+  StackSet{{resource.name}}:
+    DependsOn:
+      - Organizations
+      - DetachSCP
+        {%- if resource.depends_on %}
+            {%- for depends_on in resource.depends_on %}
+      - StackSet{{ depends_on }}
+            {%- endfor %}
+        {%- endif %}
+    Type: Custom::StackInstance
+    Properties:
+      StackSetName: AWS-Landing-Zone-Baseline-{{resource.name}}
+      TemplateURL: ''  ## **** VERY IMPORTANT *** This tells stack set state machine to NOT create/update the StackSet, rather just add a StackInstance
+      AccountList:
+        - !GetAtt 'Organizations.AccountId'
+      RegionList:
+        {%- if resource.regions %}
+            {%- for regions in resource.regions %}
+        - {{ regions }}
+            {%- endfor %}
+        {%- else %}
+        - {{ manifest.region }}
+        {%- endif %}
+      ServiceToken: {{ lambda_arn }}
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+
+#
+# CloudFormation StackSets Custom Resource - PrimaryVPC
+#
+{%- for resource in manifest.baseline_resources %}
+  {% if resource.name == 'PrimaryVPC' %}
+    {% if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+  StackSet{{resource.name}}:
+    Condition: CreateVPC
+    DependsOn:
+      - Organizations
+      - DetachSCP
+        {%- if resource.depends_on %}
+            {%- for depends_on in resource.depends_on %}
+      - {{ depends_on }}
+            {%- endfor %}
+        {%- endif %}
+    Type: Custom::StackInstance
+    Properties:
+      StackSetName: AWS-Landing-Zone-Baseline-{{resource.name}}
+      TemplateURL: ''  ## **** VERY IMPORTANT *** This tells stack set state machine to NOT create/update the StackSet, rather just add a StackInstance
+      AccountList:
+        - !GetAtt 'Organizations.AccountId'
+      RegionList:
+        - !Ref VPCRegion
+      ServiceToken: {{ lambda_arn }}
+      ParameterOverrides:
+        !GetAtt VPCCalculator.Parameters
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+
+#
+# SCP Custom Resource - Attach SCP
+#
+
+  AttachSCP:
+    Type: Custom::ServiceControlPolicy
+    DependsOn:
+      - Organizations
+      - DetachSCP
+        {%- for resource in manifest.baseline_resources %}
+          {% if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
+            {% if resource.name != 'PrimaryVPC' %}
+      - StackSet{{resource.name}}
+            {%- endif %}
+          {%- endif %}
+        {%- endfor %}
+    Properties:
+      AccountId: !GetAtt 'Organizations.AccountId'
+      PolicyList: !FindInMap [OUToSCPMap, !Ref OrgUnitName, SCP]
+      Operation: Attach
+      ServiceToken: {{ lambda_arn }}
+
+#
+# VPC Custom Resource - Subnet and AZ Calculator
+#
+
+  VPCCalculator:
+    Condition: CreateVPC
+    Type: Custom::VPCCalculator
+    DependsOn:
+      - Organizations
+    Properties:
+      VPCCidr: !Ref VPCCidr
+      PublicSubnets: !FindInMap
+        - VPC
+        - !Ref VPCOptions
+        - PublicSubnets
+      PrivateSubnets: !FindInMap
+        - VPC
+        - !Ref VPCOptions
+        - PrivateSubnets
+      AvailabilityZones: !FindInMap
+        - VPC
+        - !Ref VPCOptions
+        - AvailabilityZones
+      CreatePrivateSubnets: !FindInMap
+        - VPC
+        - !Ref VPCOptions
+        - CreatePrivateSubnets
+      CreatePublicSubnets: !FindInMap
+        - VPC
+        - !Ref VPCOptions
+        - CreatePublicSubnets
+      CreateAdditionalPrivateSubnets: !FindInMap
+        - VPC
+        - !Ref VPCOptions
+        - CreateAdditionalPrivateSubnets
+      Region: !Ref VPCRegion
+      ServiceToken: {{ lambda_arn }}
+
+
+#
+# VPC Custom Resource - Get SSM Parameter Values
+#
+
+  VPCParameters:
+    Type: Custom::SSMParameters
+    Properties:
+        SSMParameterKeys: # TODO, insert with jinja
+          - /org/member/sharedservices/vpc_private_route_ids
+          - /org/member/sharedservices/vpc_id
+          - /org/member/sharedservices/account_id
+          - /org/member/sharedservices/vpc_region
+        ServiceToken: {{ lambda_arn }}
+
+
+#
+# Expunge VPC Custom Resource - Delete Default VPC
+#
+
+  ExpungeVPC:
+    DependsOn:
+      - Organizations
+      - DetachSCP
+    Type: Custom::ExpungeVPC
+    Properties:
+        AccountList:
+          - !GetAtt 'Organizations.AccountId'
+        Region: !Ref VPCRegion
+        ServiceToken: {{ lambda_arn }}
+
+
+#
+# VPC Custom Resource - Peering
+#
+
+  VPCPeering:
+    Condition: PeerVPC
+    Type: Custom::VPCPeering
+    DependsOn:
+      - StackSetPrimaryVPC
+    Properties:
+      PeeringConnectionKeyPrefix: /org/member/sharedservices
+      PeeringAccountID: !GetAtt 'VPCParameters./org/member/sharedservices/account_id'
+      PeeringVPCID: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_id'
+      PeeringRegion: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_region'
+      AccountName: !Ref AccountName
+      AccountID : !GetAtt 'Organizations.AccountId'
+      VPCID : !GetAtt 'StackSetPrimaryVPC.output_vpcid'
+      Region: !Ref VPCRegion
+      ServiceToken: {{ lambda_arn }}
+
+#
+# VPC Custom Resource - Peer Routing
+#
+
+  NewVPCPeerRouting:
+    Condition: PeerVPC
+    Type: Custom::VPCPeering
+    DependsOn:
+      - StackSetPrimaryVPC
+      - VPCPeering
+    Properties:
+      AccountID : !GetAtt 'Organizations.AccountId'
+      Region: !Ref VPCRegion
+      RouteTableIDs: !GetAtt 'StackSetPrimaryVPC.output_privatesubnetroutetables'
+      PeerConnectionID : !GetAtt 'VPCPeering.PeerConnectionID'
+      VPCCIDR: !GetAtt 'VPCPeering.RequesterVPCCIDR'
+      ServiceToken: {{ lambda_arn }}
+
+  SharedVPCPeerRouting:
+    Condition: PeerVPC
+    Type: Custom::VPCPeering
+    DependsOn:
+      - StackSetPrimaryVPC
+      - VPCPeering
+    Properties:
+      AccountID: !GetAtt 'VPCPeering.RequesterAccountID'
+      Region: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_region'
+      RouteTableIDs: !GetAtt 'VPCParameters./org/member/sharedservices/vpc_private_route_ids'
+      PeerConnectionID : !GetAtt 'VPCPeering.PeerConnectionID'
+      VPCCIDR: !GetAtt 'VPCPeering.AccepterVPCCIDR'
+      ServiceToken: {{ lambda_arn }}
+
+Outputs:
+  AccountName:
+    Description: Account Name
+    Value: !Ref AccountName
+  AccountEmail:
+    Description: Account Email
+    Value: !Ref AccountEmail
+  AccountID:
+    Description: Account ID
+    Value: !GetAtt 'Organizations.AccountId'
