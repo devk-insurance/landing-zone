@@ -1,19 +1,19 @@
 ---
 #Default region for deploying AWS Landing Zone assets: Code Pipeline, Step functions, Lambda, SSM parameters, Service Catalog Portfolio/Products and StackSets
-region: us-east-1
+region: {{ region }}
 version: 2018-06-14
-lock_down_stack_sets_role: Yes
+lock_down_stack_sets_role: {{ lock_down_stack_sets_role }}
 
 # Landing Zone Core Account Structure
 organizational_units:
   # Landing Zone OU for Core accounts
-  - name: core
+  - name: {{ core_ou }}
     include_in_baseline_products:
       - AWS-Landing-Zone-Account-Vending-Machine
     core_accounts:
       # Security account
       - name: security
-        email: email+lz-security_at_company_dot_com
+        email: {{ security_email }}
         ssm_parameters:
           - name: /org/member/security/account_id
             value: $[AccountId]
@@ -33,21 +33,9 @@ organizational_units:
             deploy_method: stack_set
             # This SNS Topic needs to be deployed in ALL the regions where AWS Config service is enabled. (See baseline_resources: EnableConfig)
             regions:
-              - ap-northeast-1
-              - ap-northeast-2
-              - ap-south-1
-              - ap-southeast-1
-              - ap-southeast-2
-              - ca-central-1
-              - eu-central-1
-              - eu-west-1
-              - eu-west-2
-              - eu-west-3
-              - sa-east-1
-              - us-east-1
-              - us-east-2
-              - us-west-1
-              - us-west-2
+            {%- for region in sns_region_list %}
+              - {{ region }}
+            {%- endfor %}
             ssm_parameters:
               - name: /org/primary/sns_topic_arn
                 value: $[output_TopicARN]
@@ -58,24 +46,12 @@ organizational_units:
             parameter_file: parameters/core_accounts/aws-landing-zone-guardduty-master.json
             deploy_method: stack_set
             regions:
-              - ap-northeast-1
-              - ap-northeast-2
-              - ap-south-1
-              - ap-southeast-1
-              - ap-southeast-2
-              - ca-central-1
-              - eu-central-1
-              - eu-west-1
-              - eu-west-2
-              - eu-west-3
-              - sa-east-1
-              - us-east-1
-              - us-east-2
-              - us-west-1
-              - us-west-2
+            {%- for region in guardduty_region_list %}
+              - {{ region }}
+            {%- endfor %}
       # Logging account
       - name: log-archive
-        email: email+lz-logging_at_company_dot_com
+        email: {{ logging_email }}
         ssm_parameters:
           - name: /org/member/logging/account_id
             value: $[AccountId]
@@ -89,7 +65,7 @@ organizational_units:
                 value: $[output_BucketName]
       # Shared Services account
       - name: shared-services
-        email: email+lz-shared_at_company_dot_com
+        email: {{ shared_services_email }}
         ssm_parameters:
           - name: /org/member/sharedservices/account_id
             value: $[AccountId]
@@ -99,7 +75,7 @@ organizational_units:
             parameter_file: parameters/core_accounts/aws-landing-zone-shared-services-vpc.json
             deploy_method: stack_set
             regions:
-              - us-east-2
+              - {{ region }}
             ssm_parameters:
               - name: /org/member/sharedservices/vpc_region
                 value: $[output_VPCRegion]
@@ -138,10 +114,13 @@ organizational_units:
           - name: /org/primary/organization_id
             value: $[OrganizationId]
         core_resources: []
-  - name: applications
+  {%- for ou in ou_list %}
+  {%- if ou %}
+  - name: {{ ou | replace(" ","-") }}
     include_in_baseline_products:
       - AWS-Landing-Zone-Account-Vending-Machine
-
+  {% endif %}
+  {%- endfor %}
 # Landing Zone Service Control Policies
 organization_policies:
   - name: protect-cloudtrail-config
@@ -149,9 +128,12 @@ organization_policies:
     policy_file: policies/prevent_deleting_cloudtrails_config.json
     #Apply to accounts in the following OU(s)
     apply_to_accounts_in_ou:
-      - core
-      - applications
-
+      - {{ core_ou }}
+      {%- for ou in ou_list %}
+      {%- if ou %}
+      - {{ ou | replace(" ","-") }}
+      {% endif %}
+      {%- endfor %}
 # Landing Zone Service Catalog portolfios/products (Optional/Baseline)
 portfolios:
   - name: AWS Landing Zone - Baseline
@@ -171,9 +153,12 @@ portfolios:
         product_type: baseline
         # Do you wish to auto-apply this baseline to accounts everytime a new version of AVM product is created by pipeline?
         apply_baseline_to_accounts_in_ou:
-          - core
-          - applications
-
+          - {{ core_ou }}
+          {%- for ou in ou_list %}
+          {%- if ou %}
+          - {{ ou | replace(" ","-") }}
+          {% endif %}
+          {%- endfor %}
         launch_constraint_role: $[alfred_ssm_/org/primary/service_catalog/constraint/role_arn]
 
 # Landing Zone Service Baseline Resources
@@ -204,22 +189,12 @@ baseline_resources:
     template_file: templates/aws_baseline/aws-landing-zone-enable-config.template
     parameter_file: parameters/aws_baseline/aws-landing-zone-enable-config.json
     deploy_method: stack_set
+    {%- if enable_config_all_regions.lower() == 'yes' %}
     regions:
-      - ap-northeast-1
-      - ap-northeast-2
-      - ap-south-1
-      - ap-southeast-1
-      - ap-southeast-2
-      - ca-central-1
-      - eu-central-1
-      - eu-west-1
-      - eu-west-2
-      - eu-west-3
-      - sa-east-1
-      - us-east-1
-      - us-east-2
-      - us-west-1
-      - us-west-2
+    {%- for region in config_region_list %}
+      - {{ region }}
+    {%- endfor %}
+    {%- endif %}
 
     # This template deploys the Config Rules that monitor the Global resources i.e. IAM
     # It needs to be deployed in Home region ONLY
@@ -242,22 +217,12 @@ baseline_resources:
     template_file: templates/aws_baseline/aws-landing-zone-config-rules.template
     parameter_file: parameters/aws_baseline/aws-landing-zone-config-rules.json
     deploy_method: stack_set
+    {%- if enable_config_all_regions.lower() == 'yes' %}
     regions:
-      - ap-northeast-1
-      - ap-northeast-2
-      - ap-south-1
-      - ap-southeast-1
-      - ap-southeast-2
-      - ca-central-1
-      - eu-central-1
-      - eu-west-1
-      - eu-west-2
-      - eu-west-3
-      - sa-east-1
-      - us-east-1
-      - us-east-2
-      - us-west-1
-      - us-west-2
+    {%- for region in config_region_list %}
+      - {{ region }}
+    {%- endfor %}
+    {%- endif %}
 
   - name: EnableNotifications
     baseline_products:

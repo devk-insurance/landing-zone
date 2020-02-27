@@ -181,7 +181,7 @@ Resources:
           sm_arn_handshake_sm: !Ref HandshakeStateMachine
       Code:
         S3Bucket: !Sub solutions-${AWS::Region}
-        S3Key: aws-landing-zone/v2.0.1/aws-landing-zone-avm.zip
+        S3Key: aws-landing-zone/v2.0.2/aws-landing-zone-avm.zip
       Description: AWS Lambda-backed Custom Resources for AVM
       FunctionName: LandingZoneADConnector
       Handler: lambda_custom_resource.lambda_handler
@@ -201,7 +201,7 @@ Resources:
           log_level: 'info'
       Code:
         S3Bucket: !Sub solutions-${AWS::Region}
-        S3Key: aws-landing-zone/v2.0.1/aws-landing-zone-state-machine.zip
+        S3Key: aws-landing-zone/v2.0.2/aws-landing-zone-state-machine.zip
       Description: AWS Landing Zone State Machine Handler
       FunctionName: LandingZoneStateMachineLambdaADConnector
       Handler: state_machine_router.lambda_handler
@@ -623,7 +623,7 @@ Resources:
           wait_time: 15
       Code:
         S3Bucket: !Sub solutions-${AWS::Region}
-        S3Key: aws-landing-zone/v2.0.1/aws-landing-zone-handshake-state-machine.zip
+        S3Key: aws-landing-zone/v2.0.2/aws-landing-zone-handshake-state-machine.zip
       Description: AWS Lambda-backed Custom Resources for Handshake Mechanism
       FunctionName: LandingZoneHandshakeSMLambdaADConnector
       Handler: handshake_sm_router.lambda_handler
