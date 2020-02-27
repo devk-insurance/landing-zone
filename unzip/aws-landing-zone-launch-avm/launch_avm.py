@@ -3,6 +3,7 @@ from lib.state_machine import StateMachine
 from lib.ssm import SSM
 from lib.helper import sanitize
 from lib.organizations import Organizations
+from state_machine_handler import Organizations as Org
 from lib.manifest import Manifest
 from lib.params import ParamsHandler
 import inspect
@@ -57,71 +58,65 @@ class LaunchAVM(object):
     def start_launch_avm(self, sm_arn_launch_avm):
         try:
             self.logger.info("Starting the launch AVM trigger")
-            ou_id_map = {}
 
-            org = Organizations(self.logger)
-            response = org.list_roots()
+            org = Org({}, self.logger)
+            organizations = Organizations(self.logger)
+            delimiter = self.manifest.nested_ou_delimiter
+
+            response = organizations.list_roots()
             self.logger.info("List roots Response")
             self.logger.info(response)
             root_id = response['Roots'][0].get('Id')
 
-            response = org.list_organizational_units_for_parent(ParentId=root_id)
-            next_token = response.get('NextToken', None)
+            for ou in self.manifest.organizational_units:
+                list_of_accounts = []
+                _params = []
+                avm_product = ou.include_in_baseline_products[0]
 
-            for ou in response['OrganizationalUnits']:
-                ou_id_map.update({ou.get('Name'): ou.get('Id')})
+                # Find the AVM for this OU and get the product parameters
+                for portfolio in self.manifest.portfolios:
+                    for product in portfolio.products:
+                        if product.name.strip() == avm_product.strip():
+                            _params = self._load_params(product.parameter_file)
+                            portfolio_name = portfolio.name.strip()
 
-            while next_token is not None:
-                response = org.list_organizational_units_for_parent(ParentId=root_id,
-                                                                    NextToken=next_token)
-                next_token = response.get('NextToken', None)
-                for ou in response['OrganizationalUnits']:
-                    ou_id_map.update({ou.get('Name'): ou.get('Id')})
+                if len(_params) == 0:
+                    raise Exception("Baseline product: {} for OU: {} is not found in the" \
+                      " portfolios section of Manifest".format(avm_product, ou.name))
 
-            self.logger.info("ou_id_map={}".format(ou_id_map))
+                ou_id = org._get_ou_id(organizations, root_id, ou.name, delimiter)
+                response = organizations.list_accounts_for_parent(ou_id)
+                self.logger.info("List Accounts for Parent OU {} Response".format(ou_id))
+                self.logger.info(response)
+                for account in response.get('Accounts'):
+                    if account.get('Status').upper() == 'SUSPENDED':
+                        organizations.move_account(account.get('Id'), ou_id, root_id)
+                        continue
+                    else:
+                        params = _params.copy()
+                        for key, value in params.items():
+                            if value.lower() == 'accountemail':
+                                params.update({key: account.get('Email')})
+                            elif value.lower() == 'accountname':
+                                params.update({key: account.get('Name')})
+                            elif value.lower() == 'orgunitname':
+                                params.update({key: ou.name})
 
-            for portfolio in self.manifest.portfolios:
-                for product in portfolio.products:
-                    if product.product_type.lower() == 'baseline':
-                        _params = self._load_params(product.parameter_file)
-                        self.logger.info("Input parameters format for AVM: {}".format(_params))
-                        list_of_accounts = []
-                        for ou in product.apply_baseline_to_accounts_in_ou:
-                            self.logger.debug("Looking up ou={} in ou_id_map".format(ou))
-                            ou_id = ou_id_map.get(ou)
-                            self.logger.debug("ou_id={} for ou={} in ou_id_map".format(ou_id, ou))
+                        self.logger.info(
+                            "Input parameters format for Account: {} are {}".format(account.get('Name'), params))
 
-                            response = org.list_accounts_for_parent(ou_id)
-                            self.logger.debug("List Accounts for Parent Response")
-                            self.logger.debug(response)
-                            for account in response.get('Accounts'):
-                                if account.get('Status').upper() == 'SUSPENDED':
-                                    org.move_account(account.get('Id'), ou_id, root_id)
-                                    continue
-                                else:
-                                    params = _params.copy()
-                                    for key, value in params.items():
-                                        if value.lower() == 'accountemail':
-                                            params.update({key: account.get('Email')})
-                                        elif value.lower() == 'accountname':
-                                            params.update({key: account.get('Name')})
-                                        elif value.lower() == 'orgunitname':
-                                            params.update({key: ou})
+                        list_of_accounts.append(params)
 
-                                    self.logger.info("Input parameters format for Account: {} are {}".format(account.get('Name'), params))
-
-                                    list_of_accounts.append(params)
-
-                        if len(list_of_accounts) > 0:
-                            sm_input = self._create_launch_avm_state_machine_input_map(portfolio.name, product.name,list_of_accounts)
-                            self.logger.info("Launch AVM state machine Input: {}".format(sm_input))
-                            exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), "Launch-AVM",
-                                                      time.strftime("%Y-%m-%dT%H-%M-%S"))
-                            sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn_launch_avm, sm_input, exec_name)
-                            self.list_sm_exec_arns.append(sm_exec_arn)
+                if len(list_of_accounts) > 0:
+                    sm_input = self._create_launch_avm_state_machine_input_map(portfolio_name, avm_product.strip(),
+                                                                               list_of_accounts)
+                    self.logger.info("Launch AVM state machine Input: {}".format(sm_input))
+                    exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), "Launch-AVM",
+                                              time.strftime("%Y-%m-%dT%H-%M-%S"))
+                    sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn_launch_avm, sm_input, exec_name)
+                    self.list_sm_exec_arns.append(sm_exec_arn)
 
                     time.sleep(int(wait_time))  # Sleeping for sometime
-
             return
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}

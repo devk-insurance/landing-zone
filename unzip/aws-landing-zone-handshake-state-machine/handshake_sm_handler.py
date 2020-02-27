@@ -16,7 +16,7 @@
 from lib.metrics import Metrics
 from lib.ssm import SSM
 from lib.ec2 import EC2
-from lib.sts import STS
+from lib.assume_role_helper import AssumeRole
 from lib.guardduty import GuardDuty as GD
 from botocore.vendored import requests
 from json import dumps
@@ -24,20 +24,6 @@ import inspect
 import time
 import os
 
-class AssumeRole(object):
-    def __call__(self, logger, account):
-        try:
-            sts = STS(logger)
-            role_arn = "arn:aws:iam::" + str(account) + ":role/AWSCloudFormationStackSetExecutionRole"
-            session_name = "aws-landing-zone-role"
-            # assume role
-            credentials = sts.assume_role(role_arn, session_name)
-            return credentials
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            logger.exception(message)
-            raise
 
 class VPC(object):
 

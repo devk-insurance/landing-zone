@@ -174,6 +174,25 @@ def put_ssm_parameter(key, value):
         ssm.put_parameter(key, value)
 
 
+def update_alphanum_with_char(value):
+    if value.strip() == 'Colon (:)':
+        return "':'"
+    elif value.strip() == 'Dot (.)':
+        return "'.'"
+    elif value.strip() == 'Hyphen (-)':
+        return "'-'"
+    elif value.strip() == 'Underscore (_)':
+        return "'_'"
+    elif value.strip() == 'Semicolon (;)':
+        return "';'"
+    elif value.strip() == 'Hash (#)':
+        return "'#'"
+    elif value.strip() == 'Pipe (|)':
+        return "'|'"
+    else:
+        raise Exception("Invalid Delimiter. Valid options include: colon(:), period(.), hyphen(-), underscore(_), semicolon(;), hash(#), pipe(|)")
+
+
 def config_deployer(event):
     try:
         s3 = S3(logger)
@@ -226,6 +245,7 @@ def config_deployer(event):
                 parameters['guardduty_region_list'] = get_available_regions('guardduty')
                 parameters['config_region_list'] = get_available_regions('config')
                 parameters['sns_region_list'] = get_available_regions('sns')
+                parameters.update({'nested_ou_delimiter': update_alphanum_with_char(parameters.get('nested_ou_delimiter'))})
             exclude_j2_files.append(f)
             filename, file_extension = os.path.splitext(f)
             destination_file_path = extract_path + "/" + filename if file_extension == '.j2' else extract_path + "/" + f

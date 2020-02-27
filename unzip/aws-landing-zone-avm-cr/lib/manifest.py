@@ -176,6 +176,7 @@ class PolicyList(List):
 
 @yorm.attr(region=String)
 @yorm.attr(version=String)
+@yorm.attr(nested_ou_delimiter=String)
 @yorm.attr(lock_down_stack_sets_role=Boolean)
 @yorm.attr(organizational_units=OUList)
 @yorm.attr(portfolios=PortfoliosList)

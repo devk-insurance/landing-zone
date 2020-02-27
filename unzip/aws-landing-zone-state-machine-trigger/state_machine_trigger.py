@@ -9,7 +9,7 @@ from os import environ
 from lib.organizations import Organizations
 from lib.manifest import Manifest
 from lib.params import ParamsHandler
-from lib.helper import sanitize, transform_params, reverse_transform_params
+from lib.helper import sanitize, transform_params, reverse_transform_params, convert_s3_url_to_http_url, convert_http_url_to_s3_url, trim_length
 from lib.cloudformation import StackSet
 import inspect
 import os
@@ -41,6 +41,7 @@ class StateMachineTriggerLambda(object):
         self.logger = logger
         self.sm_arns_map = sm_arns_map
         self.manifest = None
+        self.nested_ou_delimiter = ""
         self.staging_bucket = staging_bucket
         self.manifest_file_path = manifest_file_path
         self.token = token
@@ -66,10 +67,9 @@ class StateMachineTriggerLambda(object):
 
     def _stage_template(self, relative_template_path):
         if relative_template_path.lower().startswith('s3'):
-            # Convert the remote template URL s3://bucket-name/object
-            # to Virtual-hosted style URL https://bucket-name.s3.amazonaws.com/object
-            t = relative_template_path.split("/", 3)
-            s3_url = "https://{}.s3.amazonaws.com/{}".format(t[2], t[3])
+            # Convert the S3 URL s3://bucket-name/object
+            # to HTTP URL https://s3.amazonaws.com/bucket-name/object
+            s3_url = convert_s3_url_to_http_url(relative_template_path)
         else:
             local_file = os.path.join(self.manifest_folder, relative_template_path)
             remote_file = "{}/{}_{}".format(TEMPLATE_KEY_PREFIX, self.token, relative_template_path[relative_template_path.rfind('/')+1:])
@@ -177,6 +177,7 @@ class StateMachineTriggerLambda(object):
         input_params.update({'OUName': ou_name})
         input_params.update({'AccountName': account_name})
         input_params.update({'AccountEmail': account_email})
+        input_params.update({'OUNameDelimiter': self.nested_ou_delimiter})
         if ssm_map is not None:
             input_params.update({'SSMParameters':ssm_map})
         return self._create_state_machine_input_map(input_params)
@@ -203,7 +204,7 @@ class StateMachineTriggerLambda(object):
 
         return self._create_state_machine_input_map(input_params)
 
-    def _create_service_control_policy_state_machine_input_map(self, policy_name, policy_content, policy_desc=''):
+    def _create_service_control_policy_state_machine_input_map(self, policy_name, policy_content, policy_desc='', ou_list=[]):
         input_params = {}
         policy_doc = {}
         policy_doc.update({'Name': sanitize(policy_name)})
@@ -213,6 +214,8 @@ class StateMachineTriggerLambda(object):
         input_params.update({'AccountId': ''})
         input_params.update({'PolicyList': []})
         input_params.update({'Operation': ''})
+        input_params.update({'OUList': ou_list})
+        input_params.update({'OUNameDelimiter': self.nested_ou_delimiter})
         return self._create_state_machine_input_map(input_params)
 
     def _create_service_catalog_state_machine_input_map(self, portfolio, product):
@@ -295,23 +298,118 @@ class StateMachineTriggerLambda(object):
 
         return self._create_state_machine_input_map(input_params)
 
-    def _create_launch_avm_state_machine_input_map(self, portfolio, product, accounts):
-        input_params = {}
-        input_params.update({'PortfolioName': sanitize(portfolio, True)})
-        input_params.update({'ProductName': sanitize(product, True)})
-        input_params.update({'ProvisioningParametersList': accounts})
-        return self._create_state_machine_input_map(input_params)
+    def _compare_template_and_params(self, sm_input):
+        stack_name = sm_input.get('ResourceProperties').get('StackSetName', '')
+
+        if stack_name:
+            stack_set = StackSet(self.logger)
+            describe_response = stack_set.describe_stack_set(stack_name)
+            if describe_response is not None:
+                self.logger.info("Found existing stack set.")
+
+                self.logger.info("Checking the status of last stack set operation on {}".format(stack_name))
+                response = stack_set.list_stack_set_operations(StackSetName=stack_name,
+                                                               MaxResults=1)
+
+                if response:
+                    if response.get('Summaries'):
+                        for instance in response.get('Summaries'):
+                            self.logger.info("Status of last stack set operation : {}".format(instance.get('Status')))
+                            if instance.get('Status') != 'SUCCEEDED':
+                                self.logger.info("The last stack operation did not succeed. Triggering Update StackSet for {}".format(stack_name))
+                                return False
+
+                self.logger.info("Comparing the template of the StackSet: {} with local copy of template".format(stack_name))
+
+                template_http_url = sm_input.get('ResourceProperties').get('TemplateURL', '')
+                if template_http_url:
+                    template_s3_url = convert_http_url_to_s3_url(template_http_url)
+                    local_template_file = self._download_remote_file(template_s3_url)
+                else:
+                    self.logger.error("TemplateURL in state machine input is empty. Check sm_input:{}".format(sm_input))
+                    return False
+
+                cfn_template_file = tempfile.mkstemp()[1]
+                with open(cfn_template_file, "w") as f:
+                    f.write(describe_response.get('StackSet').get('TemplateBody'))
+
+                template_compare = filecmp.cmp(local_template_file, cfn_template_file, False)
+                self.logger.info("Comparing the parameters of the StackSet: {} with local copy of JSON parameters file".format(stack_name))
+
+                params_compare = True
+                params = sm_input.get('ResourceProperties').get('Parameters', {})
+                if template_compare:
+                    cfn_params = reverse_transform_params(describe_response.get('StackSet').get('Parameters'))
+                    for key, value in params.items():
+                        if cfn_params.get(key, '') == value:
+                            pass
+                        else:
+                            params_compare = False
+                            break
+
+                self.logger.info("template_compare={}".format(template_compare))
+                self.logger.info("params_compare={}".format(params_compare))
+                if template_compare and params_compare:
+                    account_list = sm_input.get('ResourceProperties').get("AccountList", [])
+                    if account_list:
+                        self.logger.info("Comparing the Stack Instances Account & Regions for StackSet: {}".format(stack_name))
+                        expected_region_list = set(sm_input.get('ResourceProperties').get("RegionList", []))
+                        actual_region_list = set()
+                        self.logger.info("Listing the Stack Instances for StackSet: {} and Account: {} ".format(stack_name, account_list[0]))
+                        response = stack_set.list_stack_instances(StackSetName=stack_name,
+                                                                  StackInstanceAccount=account_list[0],
+                                                                  MaxResults=20)
+                        self.logger.info(response)
+
+                        if response is not None:
+                            for instance in response.get('Summaries'):
+                                if instance.get('Status').upper() == 'CURRENT':
+                                    actual_region_list.add(instance.get('Region'))
+                                else:
+                                    self.logger.info("Found at least one of the Stack Instances in {} state. Triggering Update StackSet for {}".format(
+                                        instance.get('Status'), stack_name))
+                                    return False
+                            next_token = response.get('NextToken')
+                            while next_token is not None:
+                                self.logger.info('Next token found.')
+                                response = stack_set.list_stack_instances(StackSetName=stack_name,
+                                                                          StackInstanceAccount=account_list[0],
+                                                                          MaxResults=20,
+                                                                          NextToken=next_token)
+                                self.logger.info(response)
+
+                                if response is not None:
+                                    for instance in response.get('Summaries'):
+                                        if instance.get('Status').upper() == 'CURRENT':
+                                            actual_region_list.add(instance.get('Region'))
+                                        else:
+                                            self.logger.info("Found at least one of the Stack Instances in {} state. Triggering Update StackSet for {}".format(
+                                                    instance.get('Status'), stack_name))
+                                            return False
+                                    next_token = response.get('NextToken')
+
+                        if expected_region_list.issubset(actual_region_list):
+                            self.logger.info("Found expected regions : {} in deployed stack instances : {}, so skipping Update StackSet for {}".format(
+                                expected_region_list, actual_region_list, stack_name))
+                            return True
+                    else:
+                        self.logger.info("Found no changes in template & parameters, so skipping Update StackSet for {}".format(stack_name))
+                        return True
+        return False
 
     def _run_or_queue_state_machine(self, sm_input, sm_arn, list_sm_exec_arns, sm_name):
         logger.info("State machine Input: {}".format(sm_input))
-        exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), sm_name.replace(" ", ""),
+        exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), trim_length(sm_name.replace(" ", ""), 50),
                                   time.strftime("%Y-%m-%dT%H-%M-%S"))
         # If Sequential, kick off the first SM, and save the state machine input JSON
         # for the rest in SSM parameter store under /job_id/0 tree
         if self.isSequential:
             if self.index == 100:
                 sm_input = self._populate_ssm_params(sm_input)
-                sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
+                if self._compare_template_and_params(sm_input):
+                    return
+                else:
+                    sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
                 list_sm_exec_arns.append(sm_exec_arn)
             else:
                 param_name = "/%s/%s" % (self.token, self.index)
@@ -319,7 +417,10 @@ class StateMachineTriggerLambda(object):
         # Else if Parallel, execute all SM at regular interval of wait_time
         else:
             sm_input = self._populate_ssm_params(sm_input)
-            sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
+            if self._compare_template_and_params(sm_input):
+                return
+            else:
+                sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
             time.sleep(int(wait_time))  # Sleeping for sometime
             list_sm_exec_arns.append(sm_exec_arn)
         self.index = self.index + 1
@@ -327,7 +428,6 @@ class StateMachineTriggerLambda(object):
     def _deploy_resource(self, resource, sm_arn, list_sm_exec_arns, account_id = None):
         template_full_path = self._stage_template(resource.template_file)
         params = {}
-        deploy_resource_flag = True
         if resource.parameter_file:
             if len(resource.regions) > 0:
                 params = self._load_params(resource.parameter_file, account_id, resource.regions[0])
@@ -345,41 +445,7 @@ class StateMachineTriggerLambda(object):
             stack_name = "AWS-Landing-Zone-Baseline-{}".format(resource.name)
             sm_input = self._create_stack_set_state_machine_input_map(stack_name, template_full_path, params, [], [], ssm_map)
 
-            stack_set = StackSet(self.logger)
-            response = stack_set.describe_stack_set(stack_name)
-            if response is not None:
-                self.logger.info("Found existing stack set.")
-                self.logger.info("Comparing the template of the StackSet: {} with local copy of template".format(stack_name))
-                relative_template_path = resource.template_file
-                if relative_template_path.lower().startswith('s3'):
-                    local_template_file = self._download_remote_file(relative_template_path)
-                else:
-                    local_template_file = os.path.join(self.manifest_folder, relative_template_path)
-
-                cfn_template_file = tempfile.mkstemp()[1]
-                with open(cfn_template_file, "w") as f:
-                    f.write(response.get('StackSet').get('TemplateBody'))
-
-                template_compare = filecmp.cmp(local_template_file, cfn_template_file)
-                self.logger.info("Comparing the parameters of the StackSet: {} with local copy of JSON parameters file".format(stack_name))
-                params_compare = True
-                if template_compare:
-                    cfn_params = reverse_transform_params(response.get('StackSet').get('Parameters'))
-                    for key, value in params.items():
-                        if cfn_params.get(key, '') == value:
-                            pass
-                        else:
-                            params_compare = False
-                            break
-
-                self.logger.info("template_compare={}".format(template_compare))
-                self.logger.info("params_compare={}".format(params_compare))
-                if template_compare and params_compare:
-                    deploy_resource_flag = False
-                    self.logger.info("Found no changes in template & parameters, so skipping Update StackSet for {}".format(stack_name))
-
-        if deploy_resource_flag:
-            self._run_or_queue_state_machine(sm_input, sm_arn, list_sm_exec_arns, stack_name)
+        self._run_or_queue_state_machine(sm_input, sm_arn, list_sm_exec_arns, stack_name)
 
     def start_core_account_sm(self, sm_arn_account):
         try:
@@ -409,11 +475,14 @@ class StateMachineTriggerLambda(object):
                     account_name = account.name
 
                     if account_name.lower() == 'primary':
-                        account_email = ''
+                        org = Organizations(self.logger)
+                        response = org.describe_account(self.primary_account_id)
+                        account_email = response.get('Account').get('Email', '')
                     else:
                         account_email = account.email
-                        if not account_email:
-                            raise Exception("Failed to retrieve the email address for the Account: {}".format(account_name))
+
+                    if not account_email:
+                        raise Exception("Failed to retrieve the email address for the Account: {}".format(account_name))
 
                     ssm_map = self._create_ssm_input_map(account.ssm_parameters)
 
@@ -463,9 +532,30 @@ class StateMachineTriggerLambda(object):
             logger.info("Processing SCPs from {} file".format(self.manifest_file_path))
             list_sm_exec_arns = []
             count = 0
+
+
+            # Generate the list of ALL OUs
+            all_ous = set()
+            for ou in self.manifest.organizational_units:
+                all_ous.add(ou.name)
+
             for policy in self.manifest.organization_policies:
+                # Generate the list of OUs to attach this SCP to
+                ou_list = []
+                attach_ou_list = set(policy.apply_to_accounts_in_ou)
+
+                for ou in attach_ou_list:
+                    ou_list.append((ou, 'Attach'))
+
+                # Generate the list of OUs to detach this SCP from
+                detach_ou_list = all_ous - attach_ou_list
+
+                for ou in detach_ou_list:
+                    ou_list.append((ou, 'Detach'))
+
                 policy_content = self._load_policy(policy.policy_file)
-                sm_input = self._create_service_control_policy_state_machine_input_map(policy.name, policy_content, policy.description)
+                sm_input = self._create_service_control_policy_state_machine_input_map(policy.name, policy_content,
+                                                                                       policy.description, ou_list)
                 self._run_or_queue_state_machine(sm_input, sm_arn_scp, list_sm_exec_arns, policy.name)
                 # Count number of stacksets
                 count += 1
@@ -514,80 +604,11 @@ class StateMachineTriggerLambda(object):
             self.logger.exception(message)
             raise
 
-    def start_launch_avm(self, sm_arn_launch_avm):
-        try:
-            logger.info("Starting the launch AVM trigger")
-            list_sm_exec_arns = []
-            ou_id_map = {}
-
-            org = Organizations(self.logger)
-            response = org.list_roots()
-            self.logger.info("List roots Response")
-            self.logger.info(response)
-            root_id = response['Roots'][0].get('Id')
-
-            response = org.list_organizational_units_for_parent(ParentId=root_id)
-            next_token = response.get('NextToken', None)
-
-            for ou in response['OrganizationalUnits']:
-                ou_id_map.update({ou.get('Name'): ou.get('Id')})
-
-            while next_token is not None:
-                response = org.list_organizational_units_for_parent(ParentId=root_id,
-                                                                    NextToken=next_token)
-                next_token = response.get('NextToken', None)
-                for ou in response['OrganizationalUnits']:
-                    ou_id_map.update({ou.get('Name'): ou.get('Id')})
-
-            self.logger.info("ou_id_map={}".format(ou_id_map))
-
-            for portfolio in self.manifest.portfolios:
-                for product in portfolio.products:
-                    if product.product_type.lower() == 'baseline':
-                        _params = self._load_params(product.parameter_file)
-                        logger.info("Input parameters format for AVM: {}".format(_params))
-                        list_of_accounts = []
-                        for ou in product.apply_baseline_to_accounts_in_ou:
-                            self.logger.debug("Looking up ou={} in ou_id_map".format(ou))
-                            ou_id = ou_id_map.get(ou)
-                            self.logger.debug("ou_id={} for ou={} in ou_id_map".format(ou_id, ou))
-
-                            response = org.list_accounts_for_parent(ou_id)
-                            self.logger.debug("List Accounts for Parent Response")
-                            self.logger.debug(response)
-                            for account in response.get('Accounts'):
-                                params = _params.copy()
-                                for key, value in params.items():
-                                    if value.lower() == 'accountemail':
-                                        params.update({key: account.get('Email')})
-                                    elif value.lower() == 'accountname':
-                                        params.update({key: account.get('Name')})
-                                    elif value.lower() == 'orgunitname':
-                                        params.update({key: ou})
-
-                                logger.info("Input parameters format for Account: {} are {}".format(account.get('Name'), params))
-
-                                list_of_accounts.append(params)
-
-                        if len(list_of_accounts) > 0:
-                            sm_input = self._create_launch_avm_state_machine_input_map(portfolio.name, product.name,list_of_accounts)
-                            logger.info("Launch AVM state machine Input: {}".format(sm_input))
-                            exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), "Launch-AVM",
-                                                      time.strftime("%Y-%m-%dT%H-%M-%S"))
-                            sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn_launch_avm, sm_input,exec_name)
-                            list_sm_exec_arns.append(sm_exec_arn)
-
-                    time.sleep(int(wait_time))  # Sleeping for sometime
-            self._save_sm_exec_arn(list_sm_exec_arns)
-            return
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
-
     def trigger_state_machines(self):
         try:
             self.manifest = Manifest(self.manifest_file_path)
+            if self.manifest.nested_ou_delimiter != "":
+                self.nested_ou_delimiter = self.manifest.nested_ou_delimiter
 
             if self.pipeline_stage == 'core_accounts':
                 self.start_core_account_sm(self.sm_arns_map.get('account'))
@@ -599,8 +620,6 @@ class StateMachineTriggerLambda(object):
                 self.start_service_catalog_sm(self.sm_arns_map.get('service_catalog'))
             elif self.pipeline_stage == 'baseline_resources':
                 self.start_baseline_resources_sm(self.sm_arns_map.get('stack_set'))
-            elif self.pipeline_stage == 'launch_avm':
-                self.start_launch_avm(self.sm_arns_map.get('launch_avm'))
 
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
@@ -630,42 +649,42 @@ class StateMachineTriggerLambda(object):
                         return 'FAILED', err_msg
 
                 if self.isSequential:
-                    _params_list = self.ssm.get_parameters_by_path(self.token)
-                    if _params_list:
-                        params_list = sorted(_params_list, key=lambda i: i['Name'])
-                        sm_input = json.loads(params_list[0].get('Value'))
-                        if self.pipeline_stage == 'core_accounts':
-                            sm_arn = self.sm_arns_map.get('account')
-                            sm_name = sm_input.get('ResourceProperties').get('OUName') + "-" + sm_input.get('ResourceProperties').get('AccountName')
+                    # get_parameters_by_path(job_id) => {"Name": "/job_id/101","Value": state_machine_input_json},{"Name": "/job_id/102","Value": state_machine_input_json},...
+                    _sm_list = self.ssm.get_parameters_by_path(self.token)
+                    if _sm_list:
+                        sm_list = sorted(_sm_list, key=lambda i: i['Name'])
 
-                            account_name = sm_input.get('ResourceProperties').get('AccountName')
-                            if account_name.lower() == 'primary':
-                                org = Organizations(self.logger)
-                                response = org.describe_account(self.primary_account_id)
-                                account_email = response.get('Account').get('Email', '')
-                                sm_input.get('ResourceProperties').update({'AccountEmail': account_email})
+                        for next_sm in sm_list:
+                            # Get the state machine input json for the next state machine invoke in sequence
+                            sm_input = json.loads(next_sm.get('Value'))
+                            if self.pipeline_stage == 'core_accounts':
+                                sm_arn = self.sm_arns_map.get('account')
+                                sm_name = sm_input.get('ResourceProperties').get('OUName') + "-" + sm_input.get('ResourceProperties').get('AccountName')
+                            elif self.pipeline_stage == 'core_resources':
+                                sm_arn = self.sm_arns_map.get('stack_set')
+                                sm_name = sm_input.get('ResourceProperties').get('StackSetName')
+                                sm_input = self._populate_ssm_params(sm_input)
+                            elif self.pipeline_stage == 'service_control_policy':
+                                sm_arn = self.sm_arns_map.get('service_control_policy')
+                                sm_name = sm_input.get('ResourceProperties').get('PolicyDocument').get('Name')
+                            elif self.pipeline_stage == 'service_catalog':
+                                sm_arn = self.sm_arns_map.get('service_catalog')
+                                sm_name = sm_input.get('ResourceProperties').get('SCProduct').get('ProductName')
+                            elif self.pipeline_stage == 'baseline_resources':
+                                sm_arn = self.sm_arns_map.get('stack_set')
+                                sm_name = sm_input.get('ResourceProperties').get('StackSetName')
+                                sm_input = self._populate_ssm_params(sm_input)
 
-                        elif self.pipeline_stage == 'core_resources':
-                            sm_arn = self.sm_arns_map.get('stack_set')
-                            sm_name = sm_input.get('ResourceProperties').get('StackSetName')
-                            sm_input = self._populate_ssm_params(sm_input)
-                        elif self.pipeline_stage == 'service_control_policy':
-                            sm_arn = self.sm_arns_map.get('service_control_policy')
-                            sm_name = sm_input.get('ResourceProperties').get('PolicyDocument').get('Name')
-                        elif self.pipeline_stage == 'service_catalog':
-                            sm_arn = self.sm_arns_map.get('service_catalog')
-                            sm_name = sm_input.get('ResourceProperties').get('SCProduct').get('ProductName')
-                        elif self.pipeline_stage == 'baseline_resources':
-                            sm_arn = self.sm_arns_map.get('stack_set')
-                            sm_name = sm_input.get('ResourceProperties').get('StackSetName')
-                            sm_input = self._populate_ssm_params(sm_input)
-
-                        exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), sm_name.replace(" ", ""),
-                                                  time.strftime("%Y-%m-%dT%H-%M-%S"))
-                        sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
-                        self._save_sm_exec_arn([sm_exec_arn])
-                        self.ssm.delete_parameter(params_list[0].get('Name'))
-                        return 'RUNNING', ''
+                            if self._compare_template_and_params(sm_input):
+                                continue
+                            else:
+                                exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), trim_length(sm_name.replace(" ", ""), 50),
+                                                          time.strftime("%Y-%m-%dT%H-%M-%S"))
+                                sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
+                                self._save_sm_exec_arn([sm_exec_arn])
+                                # Delete the SSM parameter "/job_id/101"
+                                self.ssm.delete_parameter(next_sm.get('Name'))
+                                return 'RUNNING', ''
 
                 self.ssm.delete_parameter(self.token)
                 return 'SUCCEEDED', ''

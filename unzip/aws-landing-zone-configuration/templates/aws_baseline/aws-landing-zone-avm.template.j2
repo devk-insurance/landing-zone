@@ -101,27 +101,6 @@ Metadata:
         default: Network Region
 
 Mappings:
-  OUToSCPMap:
-    {%- for ou in manifest.organizational_units %}
-        {%- set include_ou = { 'flag': False } %}
-        {%- for policy in manifest.organization_policies %}
-            {%- if ou.name in policy.apply_to_accounts_in_ou %}
-              {%-   if include_ou.update({'flag':True}) %}{%- endif %}
-            {%- endif %}
-        {%- endfor %}
-        {%- if include_ou.flag %}
-        {{ ou.name }}:
-            SCP:
-            {%- for policy in manifest.organization_policies %}
-                {%- if ou.name in policy.apply_to_accounts_in_ou %}
-                - {{ policy.name }}
-                {%- endif %}
-            {%- endfor %}
-        {%- else %}
-        {{ ou.name }}:
-            SCP: []
-        {%- endif %}
-    {%- endfor %}
   VPC:
     Public-Only-2-AZ:
       AvailabilityZones: 2
@@ -310,23 +289,10 @@ Resources:
       OUName: !Ref OrgUnitName
       AccountName: !Ref AccountName
       AccountEmail: !Ref AccountEmail
+      {%- if manifest.nested_ou_delimiter != '' %}
+      OUNameDelimiter: '{{manifest.nested_ou_delimiter}}'
+      {%- endif %}
       ServiceToken: {{ lambda_arn }}
-      key: {{ uuid }}
-
-#
-# SCP Custom Resource - Detach SCP
-#
-
-  DetachSCP:
-    DependsOn:
-      - Organizations
-    Type: Custom::ServiceControlPolicy
-    Properties:
-      AccountId: !GetAtt 'Organizations.AccountId'
-      PolicyList: !FindInMap [OUToSCPMap, !Ref OrgUnitName, SCP]
-      Operation: Detach
-      ServiceToken: {{ lambda_arn }}
-      key: {{ uuid }}
 
 #
 # Cloudformation StackSets Custom Resource
@@ -336,13 +302,12 @@ Resources:
   {%- if resource.deploy_method == 'stack_set' and resource.parameter_override != 'true' %}
     {%- if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
 
-  StackSet{{resource.name}}:
+  StackSet{{resource.name | replace("-","") | replace("_","")}}:
     DependsOn:
       - Organizations
-      - DetachSCP
         {%- if resource.depends_on %}
             {%- for depends_on in resource.depends_on %}
-      - StackSet{{ depends_on }}
+      - StackSet{{ depends_on | replace("-","") | replace("_","")}}
             {%- endfor %}
         {%- endif %}
     Type: Custom::StackInstance
@@ -371,11 +336,10 @@ Resources:
   {%- if resource.name == 'PrimaryVPC' %}
     {%- if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
 
-  StackSet{{resource.name}}:
+  StackSet{{resource.name | replace("-","") | replace("_","")}}:
     Condition: CreateVPC
     DependsOn:
       - Organizations
-      - DetachSCP
         {%- if resource.depends_on %}
             {%- for depends_on in resource.depends_on %}
       - {{ depends_on }}
@@ -397,30 +361,6 @@ Resources:
 {%- endfor %}
 
 #
-# SCP Custom Resource - Attach SCP
-#
-
-  AttachSCP:
-    Type: Custom::ServiceControlPolicy
-    DependsOn:
-      - Organizations
-      - DetachSCP
-      - ExpungeVPC
-        {%- for resource in manifest.baseline_resources %}
-          {%- if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
-            {%- if resource.name != 'PrimaryVPC' %}
-      - StackSet{{resource.name}}
-            {%- endif %}
-          {%- endif %}
-        {%- endfor %}
-    Properties:
-      AccountId: !GetAtt 'Organizations.AccountId'
-      PolicyList: !FindInMap [OUToSCPMap, !Ref OrgUnitName, SCP]
-      Operation: Attach
-      ServiceToken: {{ lambda_arn }}
-      key: {{ uuid }}
-
-#
 # VPC Custom Resource - Subnet and AZ Calculator
 #
 
@@ -430,6 +370,8 @@ Resources:
     DependsOn:
       - Organizations
     Properties:
+      AccountList:
+        - !GetAtt 'Organizations.AccountId'
       VPCCidr: !Ref VPCCidr
       PublicSubnets: !FindInMap
         - VPC
@@ -489,14 +431,13 @@ Resources:
 # GuardDuty Custom Resource - {{ region }} (depends on release/v2.0)
 #
 
-  GuardDutyMemberof{{ account.name.title() }}Account{{region.title() | replace("-","") }}:
+  GuardDutyMemberof{{ account.name.title() | replace("-","") | replace("_","")}}Account{{region.title() | replace("-","") }}:
     DependsOn:
       - Organizations
-      - DetachSCP
     Type: Custom::HandShakeStateMachine
     Properties:
       ServiceType: GuardDuty
-      HubAccountId: !GetAtt 'SSMGetParameters./org/member/{{ account.name }}/account_id'
+      HubAccountId: !GetAtt 'SSMGetParameters./org/member/security/account_id'
       HubRegion: {{ region }}
       SpokeAccountId: !GetAtt 'Organizations.AccountId'
       SpokeRegion: {{ region }}
@@ -516,7 +457,6 @@ Resources:
   ExpungeVPC:
     DependsOn:
       - Organizations
-      - DetachSCP
     Type: Custom::ExpungeVPC
     Properties:
         AccountList:

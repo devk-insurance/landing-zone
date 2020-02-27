@@ -13,6 +13,9 @@
 
 import re
 import boto3
+from os import environ
+from urllib.parse import urlparse
+
 
 def sanitize(name, space_allowed=False, replace_with_character='_'):
     # This function will replace any character other than [a-zA-Z0-9._-] with '_'
@@ -22,11 +25,13 @@ def sanitize(name, space_allowed=False, replace_with_character='_'):
         sanitized_name = re.sub(r'([^a-zA-Z0-9._-])', replace_with_character, name)
     return sanitized_name
 
+
 def trim_length(string, length):
     if len(string) > length:
         return string[:length]
     else:
         return string
+
 
 # Getting Service regions
 def get_available_regions(service_name):
@@ -37,6 +42,15 @@ def get_available_regions(service_name):
     """
     session = boto3.session.Session()
     return session.get_available_regions(service_name)
+
+
+def get_sts_region():
+    return environ.get('AWS_REGION')
+
+
+def get_sts_endpoint():
+    return "https://sts.%s.amazonaws.com" % environ.get('AWS_REGION')
+
 
 def transform_params(params_in):
     """
@@ -61,6 +75,7 @@ def transform_params(params_in):
         params_list.append(param)
     return params_list
 
+
 def reverse_transform_params(params_in):
     """
     Args:
@@ -82,3 +97,23 @@ def reverse_transform_params(params_in):
         params_out.update({key: value})
     return params_out
 
+
+def convert_s3_url_to_http_url(s3_url):
+    # Convert the S3 URL s3://bucket-name/object
+    # to HTTP URL https://s3.amazonaws.com/bucket-name/object
+    u = urlparse(s3_url)
+    s3bucket = u.netloc
+    s3key = u.path[1:]
+    http_url = "https://s3.amazonaws.com/{}/{}".format(s3bucket, s3key)
+    return http_url
+
+
+def convert_http_url_to_s3_url(http_url):
+    # Convert the HTTP URL https://s3.amazonaws.com/bucket-name/object
+    # to S3 URL s3://bucket-name/object
+    u = urlparse(http_url)
+    t = u.path.split('/', 2)
+    s3bucket = t[1]
+    s3key = t[2]
+    s3_url = "s3://{}/{}".format(s3bucket, s3key)
+    return s3_url

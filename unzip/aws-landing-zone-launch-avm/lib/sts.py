@@ -15,7 +15,12 @@
 
 import boto3
 import inspect
-sts_client = boto3.client('sts')
+from botocore.exceptions import ClientError
+from lib.helper import get_sts_region, get_sts_endpoint
+
+sts_client = boto3.client('sts',
+                          region_name=get_sts_region(),
+                          endpoint_url=get_sts_endpoint())
 
 
 class STS(object):
@@ -30,6 +35,34 @@ class STS(object):
                 DurationSeconds=duration
             )
             return response['Credentials']
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    def assume_role_new_account(self, role_arn, session_name, duration=900):
+        try:
+            response = sts_client.assume_role(
+                RoleArn=role_arn,
+                RoleSessionName=session_name,
+                DurationSeconds=duration
+            )
+            return response['Credentials']
+        except ClientError as e:
+            self.logger.exception(e.response['Error']['Code'])
+            if e.response['Error']['Code'] == 'AccessDenied':
+                return {'Error': 'AccessDenied'}
+            else:
+                message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                           'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                self.logger.exception(message)
+                raise
+
+    def get_caller_identity(self):
+        try:
+            response = sts_client.get_caller_identity()
+            return response
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}

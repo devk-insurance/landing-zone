@@ -2,17 +2,17 @@
     "Version": "2012-10-17",
     "Statement": [
         {
-            "Effect": "Allow",
-            "Action": "*",
-            "Resource": "*"
-        },
-        {
             "Effect": "Deny",
             "Action": [
                 "config:Delete*",
                 "config:Stop*"
             ],
-            "Resource": "*"
+            "Resource": "*",
+            "Condition": {
+                "ArnNotLike": {
+                  "aws:PrincipalARN":"arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole"
+                }
+            }
         },
         {
             "Effect": "Deny",
@@ -20,7 +20,12 @@
                 "cloudtrail:Delete*",
                 "cloudtrail:Stop*"
             ],
-            "Resource": "*"
+            "Resource": "*",
+            "Condition": {
+                "ArnNotLike": {
+                  "aws:PrincipalARN":"arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole"
+                }
+            }
         }
     ]
 }

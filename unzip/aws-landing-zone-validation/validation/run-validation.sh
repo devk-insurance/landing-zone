@@ -21,9 +21,9 @@ echo "Manifest file validated against the schema successfully"
 
 # check each file in the manifest to make sure it exists
 export current=`pwd`
-check_files=$(grep '_file:' < manifest.yaml | grep -v '^ *#' | tr -s ' ' | cut -d ' ' -f 3)
+check_files=$(grep '_file:' < manifest.yaml | grep -v '^ *#' | tr -s ' ' | tr -d '\r' | cut -d ' ' -f 3)
 for f in $check_files ; do
-  # Run Cloudformation validate, CFN_NAG & JSON validate for Cloudformation templates / parameters JSON files
+  # run aws cloudformation validate-template, cfn_nag_scan and json validate on all **remote** templates / parameters files
   if [[ $f == s3* ]]; then
     echo "S3 URL exists: $f"
     tmp_file=$(mktemp)
@@ -83,9 +83,23 @@ done
 cd templates
 export deployment_dir=`pwd`
 echo "$deployment_dir/"
-for i in $(find . -type f | grep '.template$' | sed 's/^.\///') ; do
-    echo "Running aws cloudformation validate-template on $i"
+for i in $(find . -type f | grep -E '.template$|.yaml$|.yml$|.json$' | sed 's/^.\///') ; do
+    echo "Uploading template: $i  to s3"
     aws s3 cp $deployment_dir/$i s3://$1/validate/templates/$i
+    if [ $? -ne 0 ]
+    then
+      echo "Uploading template: $i to S3 failed"
+      exit 1
+    fi
+done
+
+#V110556787: Intermittent CodeBuild stage failure due to S3 error: Access Denied
+sleep_time=30
+echo "Sleeping for $sleep_time seconds"
+sleep $sleep_time
+
+for i in $(find . -type f | grep -E '.template$|.yaml$|.yml$|.json$' | sed 's/^.\///') ; do
+    echo "Running aws cloudformation validate-template on $i"
     aws cloudformation validate-template --template-url https://s3.$AWS_REGION.amazonaws.com/$1/validate/templates/$i --region $AWS_REGION
     if [ $? -ne 0 ]
     then

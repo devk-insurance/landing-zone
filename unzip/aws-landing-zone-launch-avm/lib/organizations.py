@@ -29,6 +29,10 @@ class Organizations(object):
             response = org_client.list_roots()
             return response
         except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.error(message)
+            self.logger.info("Caught exception - returning None")
             return None
 
     # describe organization
@@ -50,28 +54,49 @@ class Organizations(object):
             self.logger.info("The organization already exist in this account. This should not impact the workflow.")
             pass
 
-    def list_organizational_units_for_parent(self, **kwargs):
+    def list_organizational_units_for_parent(self, parent_id):
         try:
-            response = org_client.list_organizational_units_for_parent(**kwargs)
-            return response
+            response = org_client.list_organizational_units_for_parent(
+                ParentId=parent_id
+            )
+
+            ou_list = response.get('OrganizationalUnits', [])
+            next_token = response.get('NextToken', None)
+
+            while next_token is not None:
+                self.logger.info("Next Token Returned: {}".format(next_token))
+                response = org_client.list_organizational_units_for_parent(
+                    ParentId=parent_id,
+                    NextToken=next_token
+                )
+                self.logger.info("Extending OU List")
+                ou_list.extend(response.get('OrganizationalUnits', []))
+                next_token = response.get('NextToken', None)
+
+            return ou_list
+
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
             self.logger.exception(message)
             raise
 
-    def create_organizational_unit(self, root_id, name):
+    def create_organizational_unit(self, parent_id, name):
         try:
             response = org_client.create_organizational_unit(
-                ParentId=root_id,
+                ParentId=parent_id,
                 Name=name
             )
             return response
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'DuplicateOrganizationalUnitException':
+                self.logger.info("Caught exception 'DuplicateOrganizationalUnitException', handling the exception...")
+                return {"Error": "DuplicateOrganizationalUnitException"}
+            else:
+                message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                           'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                self.logger.exception(message)
+                raise
 
     def delete_organization_unit(self, ou_id):
         try:

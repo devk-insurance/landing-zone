@@ -103,7 +103,7 @@ Mappings:
   SourceCode:
     General:
       S3Bucket: "solutions"
-      KeyPrefix: "centralized-logging/v2.2.0"
+      KeyPrefix: "centralized-logging/v3.0.0"
 
   # CloudWatch logs pattern mapping
   FilterPatternLookup:
@@ -164,14 +164,14 @@ Resources:
         Variables:
           # V56536055 - 10/08/2018 - better logging capabilities
           LOG_LEVEL: 'INFO' #change to WARN, ERROR or DEBUG as needed
-          DomainEndpoint: !Sub ${ESDomain}
-          MasterRole: !Sub ${MasterRole}
-          SessionId: !Sub ${AWS::AccountId}-${AWS::Region}
-          Owner: Spoke
-          Solution: SO0009s
-          ClusterSize: !Ref ClusterSize
+          DOMAIN_ENDPOINT: !Sub ${ESDomain}
+          MASTER_ROLE: !Sub ${MasterRole}
+          SESSION_ID: !Sub ${AWS::AccountId}-${AWS::Region}
+          OWNER: Spoke
+          SOLUTION: SO0009s
+          CLUSTER_SIZE: !Ref ClusterSize
           UUID: !Sub ${CreateUniqueID.UUID}
-          AnonymousData: !FindInMap [InstanceMap, send-data, SendAnonymousData]
+          ANONYMOUS_DATA: !FindInMap [InstanceMap, send-data, SendAnonymousData]
       Handler: index.handler
       Role: !Sub ${LogStreamerRole.Arn}
       Code:

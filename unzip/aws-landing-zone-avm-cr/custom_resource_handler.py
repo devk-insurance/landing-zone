@@ -17,6 +17,7 @@ from lib.state_machine import StateMachine
 from lib.ssm import SSM
 from lib.sts import STS
 from lib.ec2 import EC2
+from lib.assume_role_helper import AssumeRole
 import netaddr
 from os import environ
 import time
@@ -101,7 +102,12 @@ class ExpungeDefaultVPC(object):
         self.params = event.get('ResourceProperties')
         self.logger = logger
         self.logger.info("Expunge Default VPC Handler Event")
+        self.assume_role = AssumeRole()
         self.logger.info(event)
+
+    def _session(self, region, account_id):
+        # instantiate EC2 sessions
+        return EC2(self.logger, region, credentials=self.assume_role(self.logger, account_id))
 
     # Delete Subnets and IGW method
     def delete_vpc_dependencies(self, ec2_session, region, vpc_id):
@@ -135,42 +141,35 @@ class ExpungeDefaultVPC(object):
 
         # iterate through all the members in the list
         for account in accounts:
-            role_arn = "arn:aws:iam::" + str(account) + ":role/AWSCloudFormationStackSetExecutionRole"
-            session_name = "expunge_default_vpc_role"
-            # assume role
-            credentials = sts.assume_role(role_arn, session_name)
-            self.logger.info("Assuming IAM role: {}".format(role_arn))
 
             # instantiate EC2 class using temporary security credentials
             self.logger.debug("Creating EC2 Session in {} for account: {}".format(region, account))
-            ec2 = EC2(self.logger, region, credentials=credentials)
+            ec2 = self._session(region, account)
 
-            if type(credentials) == dict:
-                response = ec2.describe_vpcs()
-                self.logger.info(response)
-                if not response.get('Vpcs'):
-                    self.logger.info(
-                        "There is no default VPC to delete in {} (member account: {}).".format(region, account))
-                else:
-                    for vpc in response.get('Vpcs'):
-                        vpc_id = vpc.get('VpcId')
-                        default = True if vpc.get('IsDefault') is True else False
-                        if default:
-                            self.logger.info("Found the default VPC: {}".format(vpc_id))
-
-                            # Delete dependencies (calling method)
-                            self.logger.info(
-                                "Deleting dependencies for member account ID: {} in {}".format(account, region))
-                            self.delete_vpc_dependencies(ec2, region, vpc_id)
-
-                            # Delete VPC
-                            self.logger.info(
-                                "Deleting VPC: {} in member account ID: {} in {}".format(vpc_id, account, region))
-                            self.logger.info(ec2.delete_vpc(vpc_id))
-                        else:
-                            self.logger.info("{} is not the default VPC, skipping...".format(vpc_id))
+            # Describe VPCs
+            response = ec2.describe_vpcs()
+            self.logger.info(response)
+            if not response.get('Vpcs'):
+                self.logger.info(
+                    "There is no default VPC to delete in {} (member account: {}).".format(region, account))
             else:
-                self.logger.error("Unable to obtain credentials")
+                for vpc in response.get('Vpcs'):
+                    vpc_id = vpc.get('VpcId')
+                    default = True if vpc.get('IsDefault') is True else False
+                    if default:
+                        self.logger.info("Found the default VPC: {}".format(vpc_id))
+
+                        # Delete dependencies (calling method)
+                        self.logger.info(
+                            "Deleting dependencies for member account ID: {} in {}".format(account, region))
+                        self.delete_vpc_dependencies(ec2, region, vpc_id)
+
+                        # Delete VPC
+                        self.logger.info(
+                            "Deleting VPC: {} in member account ID: {} in {}".format(vpc_id, account, region))
+                        self.logger.info(ec2.delete_vpc(vpc_id))
+                    else:
+                        self.logger.info("{} is not the default VPC, skipping...".format(vpc_id))
 
     def expunge_default_vpc(self):
         ec2 = EC2(self.logger, self.params.get('Region'))
@@ -245,7 +244,6 @@ class GetParameters(object):
         # read values from SSM Parameter Store
         for key_name in self.params.get('SSMParameterKeys'):
             value = ssm.get_parameter(key_name)
-            # new_key_name = key_name[key_name.rfind('/')+1:]
             parameters.update({key_name: value})
         self.logger.info(parameters)
 
@@ -257,7 +255,12 @@ class VPCCalculator(object):
         self.params = event.get('ResourceProperties')
         self.logger = logger
         self.logger.info("Calculate VPC Parameters Handler Event")
+        self.assume_role = AssumeRole()
         self.logger.info(event)
+
+    def _session(self, region, account_id):
+        # instantiate EC2 sessions
+        return EC2(self.logger, region, credentials=self.assume_role(self.logger, account_id))
 
     def calculate_vpc_parameters(self):
         # This function calculates the CIDR ranges based on the number of subnets inputted by the user
@@ -269,6 +272,7 @@ class VPCCalculator(object):
         public_subnets = self.params.get('PublicSubnets')
         private_subnets = self.params.get('PrivateSubnets')
         region = self.params.get('Region')
+        account_list = self.params.get('AccountList')
         # join the public and private subnet parameter names
         vpc_subnet_parameter_names = public_subnets + private_subnets
         all_subnet_parameter_names = ['PrivateSubnet1ACIDR',
@@ -303,7 +307,15 @@ class VPCCalculator(object):
                             'the number of subnets required.'.format(number_of_subnets, vpc_cidr))
 
         # get the available availability_zones and extract the amount needed based on the user input
-        ec2 = EC2(self.logger, region)
+        if account_list is None:
+            ec2 = EC2(self.logger, region)
+            self.logger.info("Getting list of AZs in region: {} from master account".format(region))
+        else:
+            account_id = account_list[0] # AVM can only create 1 account at a time
+            ec2 = self._session(region, account_id)
+            self.logger.info("Getting list of AZs in region: {} from account: {}".format(region, account_id))
+
+        # get AZs
         availability_zones = ec2.describe_availability_zones()
 
         # check that there are enough AZs which are available at this time to satisfy the request
@@ -344,21 +356,12 @@ class VPCPeering(object):
         self.params = event.get('ResourceProperties')
         self.logger = logger
         self.logger.info("VPC Peering Handler Event")
+        self.assume_role = AssumeRole()
         self.logger.info(event)
 
-    def assume_role(self, account):
-        try:
-            sts = STS(self.logger)
-            role_arn = "arn:aws:iam::" + str(account) + ":role/AWSCloudFormationStackSetExecutionRole"
-            session_name = "update-vpc_peering_role"
-            # assume role
-            credentials = sts.assume_role(role_arn, session_name)
-            return credentials
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
+    def _session(self, region, account_id):
+        # instantiate EC2 sessions
+        return EC2(self.logger, region, credentials=self.assume_role(self.logger, account_id))
 
     def create_vpc_peering_routing(self):
         try:
@@ -371,7 +374,7 @@ class VPCPeering(object):
             region = self.params.get('Region')
 
             # instantiate EC2 sessions
-            ec2 = EC2(self.logger, region, credentials=self.assume_role(account_id))
+            ec2 = self._session(region, account_id)
             # change routes in all the peer vpc's route tables
             for id in route_table_ids:
                 response = ec2.create_route(vpc_cidr, id, peer_connection_id)
@@ -397,7 +400,7 @@ class VPCPeering(object):
             region = self.params.get('Region')
 
             # instantiate EC2 sessions
-            ec2 = EC2(self.logger, region, credentials=self.assume_role(account_id))
+            ec2 = self._session(region, account_id)
             # change routes in all the peer vpc's route tables
             for id in route_table_ids:
                 response = ec2.update_route(vpc_cidr, id, peer_connection_id)
@@ -423,7 +426,7 @@ class VPCPeering(object):
             region = self.params.get('Region')
 
             # instantiate EC2 sessions
-            ec2 = EC2(self.logger, region, credentials=self.assume_role(account_id))
+            ec2 = self._session(region, account_id)
 
             # change routes in all the peer vpc's route tables
             for id in route_table_ids:

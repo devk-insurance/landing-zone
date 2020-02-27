@@ -2,6 +2,7 @@ from lib.ssm import SSM
 from lib.sts import STS
 from lib.ec2 import EC2
 from lib.kms import KMS
+from lib.assume_role_helper import AssumeRole
 from lib.helper import sanitize
 from os import environ
 import random
@@ -9,12 +10,18 @@ import string
 import time
 import inspect
 
+
 class ParamsHandler(object):
 
     def __init__(self, logger):
         self.logger = logger
         self.ssm = SSM(self.logger)
         self.kms = KMS(self.logger)
+        self.assume_role = AssumeRole()
+
+    def _session(self, region, account_id):
+        # instantiate EC2 sessions
+        return EC2(self.logger, region, credentials=self.assume_role(self.logger, account_id))
 
     def _extract_string(self, str, search_str):
         return str[len(search_str):]
@@ -32,13 +39,13 @@ class ParamsHandler(object):
         key_id = response.get('KeyMetadata', {}).get('KeyId')
         return key_id
 
-    def get_azs(self, region, qty, key_az=None):
+    def get_azs_from_member_account(self, region, qty, account, key_az=None):
         """gets a predefined quantity of (random) az's from a specified region
 
         Args:
             region (str): region name
             qty: quantity of az's to return
-
+            account: account id of the member account
         Returns:
             list: availability zone names
         """
@@ -48,25 +55,31 @@ class ParamsHandler(object):
                 existing_param = self.ssm.describe_parameters(key_az)
 
                 if existing_param:
+                    self.logger.info('Found existing SSM parameter, returning exising AZ list.')
                     return self.ssm.get_parameter(key_az)
-
-            self.logger.info("Creating EC2 Session in {} region".format(region))
-            ec2 = EC2(self.logger, region)
-            # Get AZs
-            self.logger.info("Getting list of AZs in region: {}".format(region))
-            az_list = ec2.describe_availability_zones()
-            self.logger.info("_get_azs output: %s" % az_list)
-            random_az_list = ','.join(random.sample(az_list, qty))
-            description = "Contains random AZs selected by Landing Zone Solution"
-            if key_az:
-                self.ssm.put_parameter(key_az, random_az_list, description)
-            return random_az_list
-
+            if account is not None:
+                ec2 = self._session(region, account)
+                self.logger.info("Getting list of AZs in region: {} from account: {}".format(region, account))
+                return self._get_az(ec2, key_az, qty)
+            else:
+                self.logger.info("Creating EC2 Session in {} region".format(region))
+                ec2 = EC2(self.logger, region)
+                return self._get_az(ec2, key_az, qty)
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
             self.logger.exception(message)
             raise
+
+    def _get_az(self, ec2, key_az, qty):
+        # Get AZs
+        az_list = ec2.describe_availability_zones()
+        self.logger.info("_get_azs output: %s" % az_list)
+        random_az_list = ','.join(random.sample(az_list, qty))
+        description = "Contains random AZs selected by Landing Zone Solution"
+        if key_az:
+            self.ssm.put_parameter(key_az, random_az_list, description)
+        return random_az_list
 
     def create_key_pair(self, account, region, param_key_material=None, param_key_fingerprint=None, param_key_name=None):
 
@@ -81,40 +94,27 @@ class ParamsHandler(object):
         key_name = sanitize("%s_%s_%s_%s" % ('lz', account, region, time.strftime("%Y-%m-%dT%H-%M-%S")))
 
         try:
-            role_arn = "arn:aws:iam::" + str(account) + ":role/AWSCloudFormationStackSetExecutionRole"
-            session_name = "create_key_pair_role"
-            # assume role
-            credentials = sts.assume_role(role_arn, session_name)
-            self.logger.info("Assuming IAM role: {}".format(role_arn))
+            ec2 = self._session(region, account)
+            # create EC2 key pair in member account
+            self.logger.info("Create key pair in the member account {} in region: {}".format(account, region))
+            response = ec2.create_key_pair(key_name)
 
-            # instantiate EC2 class
-            self.logger.debug("Creating EC2 Session in {} for account: {}".format(region, account))
-            ec2 = EC2(self.logger, region, credentials=credentials)
+            # add key material and fingerprint in the SSM Parameter Store
+            self.logger.info("Adding Key Material and Fingerprint to SSM PS")
+            description = "Contains EC2 key pair asset created by Landing Zone Solution: " \
+                          "EC2 Key Pair Custom Resource."
+            # Get Landing Zone KMS Key ID
+            key_id = self._get_kms_key_id()
+            if param_key_fingerprint:
+                self.ssm.put_parameter_use_cmk(param_key_fingerprint, response.get('KeyFingerprint'),
+                                               key_id, description)
+            if param_key_material:
+                self.ssm.put_parameter_use_cmk(param_key_material, response.get('KeyMaterial'),
+                                               key_id, description)
+            if param_key_name:
+                self.ssm.put_parameter(param_key_name, key_name, description)
 
-            if type(credentials) == dict:
-                # create EC2 key pair in member account
-                self.logger.info("Create key pair in the member account {} in region: {}".format(account, region))
-                response = ec2.create_key_pair(key_name)
-                self.logger.debug(response)
-
-                # add key material and fingerprint in the SSM Parameter Store
-                self.logger.info("Adding Key Material and Fingerprint to SSM PS")
-                description = "Contains EC2 key pair asset created by Landing Zone Solution: " \
-                              "EC2 Key Pair Custom Resource."
-                # Get Landing Zone KMS Key ID
-                key_id = self._get_kms_key_id()
-                if param_key_fingerprint:
-                    self.ssm.put_parameter_use_cmk(param_key_fingerprint, response.get('KeyFingerprint'),
-                                                   key_id, description)
-                if param_key_material:
-                    self.ssm.put_parameter_use_cmk(param_key_material, response.get('KeyMaterial'),
-                                                   key_id, description)
-                if param_key_name:
-                    self.ssm.put_parameter(param_key_name, key_name, description)
-
-                return key_name
-            else:
-                self.logger.error("Unable to obtain credentials.")
+            return key_name
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
@@ -244,8 +244,7 @@ class ParamsHandler(object):
                                 val = ssm_parameter.get('value')[2:-1]
                                 if val.lower() == 'az':
                                     az_param_name = ssm_parameter.get('name')
-
-                        value = self.get_azs(region, no_of_az, az_param_name)
+                        value = self.get_azs_from_member_account(region, no_of_az, account, az_param_name)
                     else:
                         value = keyword
 

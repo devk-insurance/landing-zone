@@ -118,7 +118,6 @@ def config_deployer(event, RequestType = 'Create'):
         lzconfig_file_path = base_path + "/" + destination_key_name
         add_on_extract_path = base_path + "/" + 'add_on_extract'
         lzconfig_extract_path = base_path + "/" + 'lzconfig_extract'
-        lzconfig_add_on_path = lzconfig_extract_path + "/" + "add-on"
         output_path = base_path + "/" + 'out'
         merge_add_on_flag = event.get('bucket_config', {}).get('merge_add_on')
 
@@ -159,6 +158,14 @@ def config_deployer(event, RequestType = 'Create'):
 
                 # Unzip the LZ Configuration ZIP file
                 unzip_function(destination_key_name, base_path, lzconfig_extract_path)
+
+                #Check if manifest.yaml exists at the root level
+                if os.path.isfile(os.path.join(lzconfig_extract_path, 'manifest.yaml')):
+                    lzconfig_add_on_path = lzconfig_extract_path + "/" + "add-on"
+                #OR inside aws-landing-zone-configuration/manifest.yaml
+                elif os.path.isfile(os.path.join(lzconfig_extract_path, 'aws-landing-zone-configuration', 'manifest.yaml')):
+                    lzconfig_add_on_path = lzconfig_extract_path + "/" + "aws-landing-zone-configuration/add-on"
+
                 make_dir(lzconfig_add_on_path)
                 shutil.copyfile(output_path + "/" + add_on_zip_file_name, lzconfig_add_on_path + "/" + add_on_zip_file_name)
 
@@ -188,6 +195,13 @@ def config_deployer(event, RequestType = 'Create'):
 
                 # Unzip the LZ Configuration ZIP file
                 unzip_function(destination_key_name, base_path, lzconfig_extract_path)
+
+                #Check if manifest.yaml exists at the root level
+                if os.path.isfile(os.path.join(lzconfig_extract_path, 'manifest.yaml')):
+                    lzconfig_add_on_path = lzconfig_extract_path + "/" + "add-on"
+                #OR inside aws-landing-zone-configuration/manifest.yaml
+                elif os.path.isfile(os.path.join(lzconfig_extract_path, 'aws-landing-zone-configuration', 'manifest.yaml')):
+                    lzconfig_add_on_path = lzconfig_extract_path + "/" + "aws-landing-zone-configuration/add-on"
 
                 my_file = Path(lzconfig_add_on_path + "/" + add_on_zip_file_name)
                 if my_file.is_file():

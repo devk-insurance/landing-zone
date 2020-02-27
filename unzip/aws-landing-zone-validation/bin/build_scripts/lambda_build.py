@@ -102,7 +102,7 @@ def main(argv):
                            'yaml', 'yorm', 'netaddr', 'add_on_config_deployer', 'launch_avm']
             elif arg == 'launch_avm':
                 zip_file_name = 'aws-landing-zone-launch-avm'
-                exclude = ['bin', 'config_deployer', 'custom_resource', 'state_machine_', 'add_on_config_deployer'
+                exclude = ['bin', 'config_deployer', 'custom_resource', 'trigger', 'add_on_config_deployer'
                            'netaddr', 'validation', 'manifest_handler', 'handshake_sm']
             else:
                 print('Invalid argument... Please provide either or all the arguments as shown in the example below.')

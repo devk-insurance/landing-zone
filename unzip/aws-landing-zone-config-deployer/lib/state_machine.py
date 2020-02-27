@@ -16,6 +16,7 @@
 import boto3
 import json
 import inspect
+from lib.helper import sanitize
 
 class StateMachine(object):
     def __init__(self, logger):
@@ -28,7 +29,7 @@ class StateMachine(object):
             response = self.state_machine_client.start_execution(
                 stateMachineArn=state_machine_arn,
                 input=json.dumps(input),
-                name=name
+                name=sanitize(name)
             )
             self.logger.info("State machine Execution ARN: {}".format(response['executionArn']))
             return response.get('executionArn')

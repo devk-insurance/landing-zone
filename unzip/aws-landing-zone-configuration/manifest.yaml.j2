@@ -3,6 +3,7 @@
 region: {{ region }}
 version: 2018-06-14
 lock_down_stack_sets_role: {{ lock_down_stack_sets_role }}
+nested_ou_delimiter: {{ nested_ou_delimiter }} # the value for this key must be in single quotes
 
 # Landing Zone Core Account Structure
 organizational_units:
@@ -32,10 +33,17 @@ organizational_units:
             parameter_file: parameters/core_accounts/aws-landing-zone-notification.json
             deploy_method: stack_set
             # This SNS Topic needs to be deployed in ALL the regions where AWS Config service is enabled. (See baseline_resources: EnableConfig)
+            {%- if enable_all_regions.lower() == 'all regions' %}
             regions:
             {%- for region in sns_region_list %}
               - {{ region }}
             {%- endfor %}
+            {%- else %}
+            #regions:
+            {%- for region in sns_region_list %}
+            #  - {{ region }}
+            {%- endfor %}
+            {%- endif %}
             ssm_parameters:
               - name: /org/primary/sns_topic_arn
                 value: $[output_TopicARN]
@@ -45,10 +53,17 @@ organizational_units:
             template_file: templates/core_accounts/aws-landing-zone-guardduty-master.template
             parameter_file: parameters/core_accounts/aws-landing-zone-guardduty-master.json
             deploy_method: stack_set
+            {%- if enable_all_regions.lower() == 'all regions' %}
             regions:
             {%- for region in guardduty_region_list %}
               - {{ region }}
             {%- endfor %}
+            {%- else %}
+            #regions:
+            {%- for region in guardduty_region_list %}
+            #  - {{ region }}
+            {%- endfor %}
+            {%- endif %}
       # Logging account
       - name: log-archive
         email: {{ logging_email }}
@@ -151,14 +166,6 @@ portfolios:
         hide_old_versions: true
         # Is this is a baseline product? e.g. AVM ?
         product_type: baseline
-        # Do you wish to auto-apply this baseline to accounts everytime a new version of AVM product is created by pipeline?
-        apply_baseline_to_accounts_in_ou:
-          - {{ core_ou }}
-          {%- for ou in ou_list %}
-          {%- if ou %}
-          - {{ ou | replace(" ","-") }}
-          {% endif %}
-          {%- endfor %}
         launch_constraint_role: $[alfred_ssm_/org/primary/service_catalog/constraint/role_arn]
 
 # Landing Zone Service Baseline Resources
@@ -189,10 +196,15 @@ baseline_resources:
     template_file: templates/aws_baseline/aws-landing-zone-enable-config.template
     parameter_file: parameters/aws_baseline/aws-landing-zone-enable-config.json
     deploy_method: stack_set
-    {%- if enable_config_all_regions.lower() == 'yes' %}
+    {%- if enable_all_regions.lower() == 'all regions' %}
     regions:
     {%- for region in config_region_list %}
       - {{ region }}
+    {%- endfor %}
+    {%- else %}
+    #regions:
+    {%- for region in config_region_list %}
+    #  - {{ region }}
     {%- endfor %}
     {%- endif %}
 
@@ -217,10 +229,15 @@ baseline_resources:
     template_file: templates/aws_baseline/aws-landing-zone-config-rules.template
     parameter_file: parameters/aws_baseline/aws-landing-zone-config-rules.json
     deploy_method: stack_set
-    {%- if enable_config_all_regions.lower() == 'yes' %}
+    {%- if enable_all_regions.lower() == 'all regions' %}
     regions:
     {%- for region in config_region_list %}
       - {{ region }}
+    {%- endfor %}
+    {%- else %}
+    #regions:
+    {%- for region in config_region_list %}
+    #  - {{ region }}
     {%- endfor %}
     {%- endif %}
 

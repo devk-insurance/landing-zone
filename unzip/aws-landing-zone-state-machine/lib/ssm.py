@@ -12,11 +12,11 @@
 ######################################################################################################################
 
 #!/bin/python
-
+from lib.decorator import try_except_retry
 import boto3
 import inspect
 import os
-ssm_region = os.environ.get('AWS_DEFAULT_REGION')
+ssm_region = os.environ.get('AWS_REGION')
 
 class SSM(object):
     def __init__(self, logger, region=ssm_region, **kwargs):
@@ -137,6 +137,7 @@ class SSM(object):
             self.logger.exception(message)
             raise
 
+    @try_except_retry()
     def describe_parameters(self, parameter_name, begins_with=False):
         try:
             response = self.ssm_client.describe_parameters(

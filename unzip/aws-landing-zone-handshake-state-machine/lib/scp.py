@@ -40,11 +40,11 @@ class ServiceControlPolicy(object):
             self.logger.exception(message)
             raise
 
-    def list_policies_for_account(self, account_id, max_items=100, page_size=20):
+    def list_policies_for_target(self, target_id, max_items=100, page_size=20):
         try:
             paginator = self.org_client.get_paginator('list_policies_for_target')
             response_iterator = paginator.paginate(
-                TargetId=account_id,
+                TargetId=target_id,
                 Filter='SERVICE_CONTROL_POLICY',
                 PaginationConfig={
                     'MaxItems': max_items,
@@ -116,11 +116,11 @@ class ServiceControlPolicy(object):
             self.logger.exception(message)
             raise
 
-    def attach_policy(self, policy_id, account_id):
+    def attach_policy(self, policy_id, target_id):
         try:
             self.org_client.attach_policy(
                 PolicyId=policy_id,
-                TargetId=account_id
+                TargetId=target_id
             )
         except ClientError as e:
             if e.response['Error']['Code'] == 'DuplicatePolicyAttachmentException':
@@ -132,11 +132,11 @@ class ServiceControlPolicy(object):
                 self.logger.exception(message)
                 raise
 
-    def detach_policy(self, policy_id, account_id):
+    def detach_policy(self, policy_id, target_id):
         try:
             self.org_client.detach_policy(
                 PolicyId=policy_id,
-                TargetId=account_id
+                TargetId=target_id
             )
         except ClientError as e:
             if e.response['Error']['Code'] == 'PolicyNotAttachedException':

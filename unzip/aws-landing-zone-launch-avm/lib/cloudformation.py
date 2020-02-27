@@ -16,6 +16,7 @@
 import boto3
 import inspect
 from botocore.exceptions import ClientError
+from lib.decorator import try_except_retry
 
 cfn_client = boto3.client('cloudformation')
 
@@ -279,6 +280,15 @@ class StackSet(object):
             self.logger.exception(message)
             raise
 
+    def list_stack_set_operations(self, **kwargs):
+        try:
+            response = cfn_client.list_stack_set_operations(**kwargs)
+            return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
 
 class Stacks(object):
     def __init__(self, logger, **kwargs):
@@ -304,6 +314,8 @@ class Stacks(object):
                                                    aws_secret_access_key=cred.get('SecretAccessKey'),
                                                    aws_session_token=cred.get('SessionToken')
                                                    )
+
+    @try_except_retry()
     def describe_stacks(self, stack_name):
         try:
             response = self.cfn_client.describe_stacks(
