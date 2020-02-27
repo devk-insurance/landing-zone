@@ -1,14 +1,14 @@
-######################################################################################################################
-#  Copyright 2016 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
-#                                                                                                                    #
-#  Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance        #
-#  with the License. A copy of the License is located at                                                             #
-#                                                                                                                    #
-#      http://aws.amazon.com/asl/                                                                                    #
-#                                                                                                                    #
-#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES #
-#  OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions    #
-#  and limitations under the License.                                                                                #
+###################################################################################################################### 
+#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#                                                                                                                    # 
+#  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
+#  with the License. A copy of the License is located at                                                             # 
+#                                                                                                                    # 
+#      http://www.apache.org/licenses/                                                                               # 
+#                                                                                                                    # 
+#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES # 
+#  OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions    # 
+#  and limitations under the License.                                                                                # 
 ######################################################################################################################
 
 # !/bin/python
@@ -167,7 +167,6 @@ def config_deployer(event, previous_event, RequestType = 'Create'):
                     lzconfig_add_on_path = lzconfig_extract_path + "/" + "aws-landing-zone-configuration/add-on"
 
                 make_dir(lzconfig_add_on_path)
-                shutil.copyfile(output_path + "/" + add_on_zip_file_name, lzconfig_add_on_path + "/" + add_on_zip_file_name)
 
                 # if previous_event exists - delete the old zip file from the landing zone config zip
                 if previous_event is not None:
@@ -182,6 +181,10 @@ def config_deployer(event, previous_event, RequestType = 'Create'):
                     if my_file.is_file():
                         logger.info("Found the old add-on zip file in the ALZ config zip, deleting the file")
                         os.remove(lzconfig_add_on_path + "/" + previous_add_on_zip_file_name)
+
+                # copy the latest add-on zip into the ALZ config
+                shutil.copyfile(output_path + "/" + add_on_zip_file_name,
+                                lzconfig_add_on_path + "/" + add_on_zip_file_name)
 
                 zip_function(destination_key_name, lzconfig_extract_path, output_path)
                 # Upload the file in the customer S3 bucket

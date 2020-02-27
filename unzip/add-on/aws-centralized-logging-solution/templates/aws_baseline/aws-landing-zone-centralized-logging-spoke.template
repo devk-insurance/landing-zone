@@ -100,10 +100,13 @@ Mappings:
   InstanceMap:
     send-data: {"SendAnonymousData": "Yes"}
 
+  # Lambda source code mapping
+  # Centralized Version v3.0.0 for helper Lambda, v3.0.1 for log streamer
+  # for Node.js updates
   SourceCode:
     General:
       S3Bucket: "solutions"
-      KeyPrefix: "centralized-logging/v3.0.0"
+      KeyPrefix: "centralized-logging"
 
   # CloudWatch logs pattern mapping
   FilterPatternLookup:
@@ -176,8 +179,8 @@ Resources:
       Role: !Sub ${LogStreamerRole.Arn}
       Code:
         S3Bucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
-        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "clog-indexing-service.zip"]]
-      Runtime: nodejs8.10
+        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "v3.0.1/clog-indexing-service.zip"]]
+      Runtime: nodejs12.x
       Timeout: 300
 
   LogStreamerInvokePermission:
@@ -215,47 +218,52 @@ Resources:
   # Solution Helper resources
   # [SolutionHelperRole, SolutionHelper, SendingAnonymousData, CreateUniqueID]
   #
+  SolutionHelper:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: Centralized Logging - Lambda function to generate a unique ID
+      Environment:
+        Variables:
+          # V56536055 - 10/08/2018 - better logging capabilities
+          LOG_LEVEL: 'INFO' #change to WARN, ERROR or DEBUG as needed
+      Handler: index.handler
+      Runtime: nodejs12.x
+      Timeout: 300
+      Role: !GetAtt SolutionHelperRole.Arn
+      Code:
+        S3Bucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
+        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "v3.0.0/clog-auth.zip"]]
+
   SolutionHelperRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
         Statement:
         - Effect: Allow
           Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
-      Path: /
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
       Policies:
-      - PolicyName: Custom_Lambda_Loader_Permissions
+      - PolicyName: root
         PolicyDocument:
-          Version: 2012-10-17
+          Version: '2012-10-17'
           Statement:
           - Effect: Allow
             Action:
             - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
-            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
-
-  SolutionHelper:
-    Type: AWS::Lambda::Function
-    Properties:
-      Handler: solution-helper.lambda_handler
-      Role: !Sub ${SolutionHelperRole.Arn}
-      Description: EFS Backup - This function is a CloudFormation custom lambda resource that generates UUID for each deployment.
-      Code:
-       S3Bucket: !Sub solutions-${AWS::Region}
-       S3Key: library/solution-helper/v3/solution-helper.zip
-      Runtime: python2.7
-      Timeout: 300
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*'
 
   CreateUniqueID:
     Type: Custom::LoadLambda
     Properties:
-      ServiceToken: !Sub ${SolutionHelper.Arn}
-      Region: !Sub ${AWS::Region}
-      CreateUniqueID: true
+      ServiceToken: !GetAtt SolutionHelper.Arn
+      Resource: UUID
 
 Outputs:
   LambdaArn:

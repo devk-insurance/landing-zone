@@ -136,10 +136,12 @@ Mappings:
       Large: '6'
 
   # Lambda source code mapping
+  # Centralized Version v3.0.0 for helper Lambda, v3.0.1 for log streamer
+  # for Node.js updates
   SourceCode:
     General:
       S3Bucket: "solutions"
-      KeyPrefix: "centralized-logging/v3.0.0"
+      KeyPrefix: "centralized-logging"
 
 Conditions:
   DemoData: !Equals [!Ref DemoTemplate, 'Yes']
@@ -339,12 +341,12 @@ Resources:
           # V56536055 - 10/08/2018 - better logging capabilities
           LOG_LEVEL: 'INFO' #change to WARN, ERROR or DEBUG as needed
       Handler: index.handler
-      Runtime: nodejs8.10
+      Runtime: nodejs12.x
       Timeout: 300
       Role: !GetAtt LambdaESCognitoRole.Arn
       Code:
         S3Bucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
-        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "clog-auth.zip"]]
+        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "v3.0.0/clog-auth.zip"]]
 
   LambdaESCognitoRole:
     Type: AWS::IAM::Role
@@ -774,8 +776,8 @@ Resources:
       Role: !Sub ${LogStreamerRole.Arn}
       Code:
         S3Bucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
-        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "clog-indexing-service.zip"]]
-      Runtime: nodejs8.10
+        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "v3.0.1/clog-indexing-service.zip"]]
+      Runtime: nodejs12.x
       Timeout: 300
 
   LogStreamerInvokePermission:

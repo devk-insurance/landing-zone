@@ -45,6 +45,12 @@ Resources:
           - ServerSideEncryptionByDefault:
               KMSMasterKeyID: !Ref KMSMasterKeyID
               SSEAlgorithm: !Ref SSEAlgorithm
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
   S3KmsBucket:
     DeletionPolicy: Retain
     Condition: UseKMS
@@ -60,6 +66,12 @@ Resources:
           - ServerSideEncryptionByDefault:
               KMSMasterKeyID: !Ref KMSMasterKeyID
               SSEAlgorithm: !Ref SSEAlgorithm
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
   S3KmsBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Condition: UseKMS
@@ -111,6 +123,12 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: !Ref SSEAlgorithm
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
   S3Bucket:
     DeletionPolicy: Retain
     Condition: UseAES256
@@ -125,6 +143,12 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: !Ref SSEAlgorithm
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+        
   S3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Condition: UseAES256
