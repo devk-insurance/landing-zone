@@ -42,6 +42,11 @@ Conditions:
 Resources:
   AdminExecutionRole:
     Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The role name is defined to allow cross account access from the security account."
     Condition: CreateAdminRole
     Properties:
       RoleName: !Ref AdminRoleName
@@ -60,6 +65,11 @@ Resources:
 
   ReadOnlyExecutionRole:
     Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The role name is defined to allow cross account access from the security account."
     Condition: CreateReadOnlyRole
     Properties:
       RoleName: !Ref ReadOnlyRoleName

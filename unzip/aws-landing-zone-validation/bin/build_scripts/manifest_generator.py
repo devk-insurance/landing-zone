@@ -15,14 +15,16 @@ function_path = os.path.normpath('../../../deployment/aws_landing_zone_configura
 parameters = {
      "region": "us-east-1",
      "core_ou": "core",
-     "ou_list": ["application"],
+     "ou_list": ["application", "tools", "org:prod", "org:dev:users"],
      "master_email": "",
      "security_email": "",
      "logging_email": "",
      "shared_services_email": "",
      "lock_down_stack_sets_role": "No",
      "ad_region": "us-east-1",
-     "ad_connector_region": "us-east-1"
+     "ad_connector_region": "us-east-1",
+     "enable_all_regions": "No",
+     "nested_ou_delimiter": "':'"
 }
 
 def generate_manifest():

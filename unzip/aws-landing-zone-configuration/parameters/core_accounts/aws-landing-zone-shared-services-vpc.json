@@ -1,7 +1,7 @@
 [
     {
         "ParameterKey": "AvailabilityZones",
-        "ParameterValue": "$[alfred_genaz_{{ number_of_az|replace("\"", "") }}]",
+        "ParameterValue": "$[alfred_genaz_3]",
         "ssm_parameters": [
         {
           "name": "/org/member/sharedservices/primary_vpc/az_list",
@@ -11,78 +11,82 @@
     },
     {
         "ParameterKey": "NumberOfAZs",
-        "ParameterValue": {{ number_of_az }}
+        "ParameterValue": "3"
     },
     {
         "ParameterKey": "CreateAdditionalPrivateSubnets",
-        "ParameterValue": {{ additional_private_subnets }}
+        "ParameterValue": "false"
     },
     {
         "ParameterKey": "CreatePrivateSubnets",
-        "ParameterValue": {{ create_private_subnets }}
+        "ParameterValue": "true"
     },
     {
         "ParameterKey": "CreatePublicSubnets",
-        "ParameterValue": {{ create_public_subnets }}
+        "ParameterValue": "true"
     },
     {
         "ParameterKey": "PrivateSubnet1ACIDR",
-        "ParameterValue": {{ private_subnet1a_cidr }}
+        "ParameterValue": "100.64.96.0/19"
     },
     {
         "ParameterKey": "PrivateSubnet1BCIDR",
-        "ParameterValue": {{ private_subnet1b_cidr }}
+        "ParameterValue": "None"
     },
     {
         "ParameterKey": "PrivateSubnet2ACIDR",
-        "ParameterValue": {{ private_subnet2a_cidr }}
+        "ParameterValue": "100.64.128.0/19"
     },
     {
         "ParameterKey": "PrivateSubnet2BCIDR",
-        "ParameterValue": {{ private_subnet2b_cidr }}
+        "ParameterValue": "None"
     },
     {
         "ParameterKey": "PrivateSubnet3ACIDR",
-        "ParameterValue": {{ private_subnet3a_cidr }}
+        "ParameterValue": "100.64.160.0/19"
     },
     {
         "ParameterKey": "PrivateSubnet3BCIDR",
-        "ParameterValue": {{ private_subnet3b_cidr }}
+        "ParameterValue": "None"
     },
     {
         "ParameterKey": "PrivateSubnet4ACIDR",
-        "ParameterValue": {{ private_subnet4a_cidr }}
+        "ParameterValue": "None"
     },
     {
         "ParameterKey": "PrivateSubnet4BCIDR",
-        "ParameterValue": {{ private_subnet4b_cidr }}
+        "ParameterValue": "None"
     },
     {
         "ParameterKey": "PublicSubnet1CIDR",
-        "ParameterValue": {{ public_subnet1_cidr }}
+        "ParameterValue": "100.64.0.0/19"
     },
     {
         "ParameterKey": "PublicSubnet2CIDR",
-        "ParameterValue": {{ public_subnet2_cidr }}
+        "ParameterValue": "100.64.32.0/19"
     },
     {
         "ParameterKey": "PublicSubnet3CIDR",
-        "ParameterValue": {{ public_subnet3_cidr }}
+        "ParameterValue": "100.64.64.0/19"
     },
     {
         "ParameterKey": "PublicSubnet4CIDR",
-        "ParameterValue": {{ public_subnet4_cidr }}
+        "ParameterValue": "None"
     },
     {
         "ParameterKey": "VPCCIDR",
-        "ParameterValue": {{ vpc_cidr }}
+        "ParameterValue": "100.64.0.0/16"
     },
     {
         "ParameterKey": "TransitVPC",
-        "ParameterValue": {{ transit_vpc }}
+        "ParameterValue": "false"
     },
     {
         "ParameterKey": "LogsRetentionInDays",
-        "ParameterValue": {{ logs_retention_in_days }}
+        "ParameterValue": "90"
+    },
+    {
+        "ParameterKey": "ManagedResourcePrefix",
+        "ParameterValue": "aws-landing-zone"
     }
 ]

@@ -6,6 +6,8 @@ timestamp() {
 
 # change directory to add-on directory.
 lambda_arn_ssm_key=$1
+none_type_values=$2
+bool_type_values=$3
 add_on_directory='add-on'
 merge_script_report='merge_report.txt'
 user_input_file='user-input.yaml'
@@ -83,8 +85,8 @@ then
 
             # Update files with user input
             echo "Updating files based on user's input"
-            echo "python3 find_replace.py $y/$user_input_file $y"
-            python3 find_replace.py $y/$user_input_file $y
+            echo "python3 find_replace.py $y/$user_input_file $y $bool_type_values $none_type_values"
+            python3 find_replace.py $y/$user_input_file $y $bool_type_values $none_type_values
             # Check python script exit code
             if [ $? -ne 0 ]
             then

@@ -11,9 +11,11 @@
 #  and limitations under the License.                                                                                #
 ######################################################################################################################
 #!/bin/python
+
 from botocore.exceptions import ClientError
 import boto3
 import inspect
+from lib.decorator import try_except_retry
 
 
 class GuardDuty(object):
@@ -252,6 +254,23 @@ class GuardDuty(object):
                 DetectorId=member_detector_id
             )
             return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    @try_except_retry()
+    def get_relationship_status(self, member_detector_id):
+        try:
+            response = self.gd_client.get_master_account(
+                DetectorId=member_detector_id
+            )
+            relationship_status = response.get('Master', {}).get('RelationshipStatus')
+            if relationship_status is not None:
+                return relationship_status
+            else:
+                raise Exception("Relationship status not found")
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}

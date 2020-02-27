@@ -16,6 +16,7 @@
 import boto3
 import inspect
 from botocore.exceptions import ClientError
+from lib.decorator import try_except_retry
 
 org_client = boto3.client('organizations')
 
@@ -121,11 +122,19 @@ class Organizations(object):
             self.logger.exception(message)
             raise
 
-    def list_accounts_for_parent(self,ou_id):
+    def list_accounts_for_parent(self, ou_id, max_results=20, next_token=None):
         try:
-            response = org_client.list_accounts_for_parent(
-                ParentId=ou_id
-            )
+            if next_token:
+                response = org_client.list_accounts_for_parent(
+                    ParentId=ou_id,
+                    NextToken=next_token,
+                    MaxResults=max_results
+                )
+            else:
+                response = org_client.list_accounts_for_parent(
+                    ParentId=ou_id,
+                    MaxResults=max_results
+                )
             return response
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
@@ -189,6 +198,7 @@ class Organizations(object):
             self.logger.exception(message)
             raise
 
+    @try_except_retry(count=4, multiplier=2)
     def describe_account(self, acct_id):
         try:
             response = org_client.describe_account(

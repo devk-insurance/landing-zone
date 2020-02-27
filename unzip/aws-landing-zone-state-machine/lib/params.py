@@ -90,7 +90,6 @@ class ParamsHandler(object):
             if existing_param:
                 return self.ssm.get_parameter(param_key_name)
 
-        sts = STS(self.logger)
         key_name = sanitize("%s_%s_%s_%s" % ('lz', account, region, time.strftime("%Y-%m-%dT%H-%M-%S")))
 
         try:
@@ -186,67 +185,68 @@ class ParamsHandler(object):
                 key = param.get("ParameterKey")
                 value = param.get("ParameterValue")
 
-                if value.startswith('$[') and value.endswith(']'):
-                    # Apply transformations
-                    keyword = value[2:-1]
-                    # Check if supported keyword e.g. alfred_ssm_, alfred_genaz_, alfred_getaz_, alfred_genuuid, etcself.
-                    if keyword.startswith('alfred_ssm_'):
-                        ssm_param_name = self._extract_string(keyword, 'alfred_ssm_')
+                if not isinstance(value, list):
+                    if value.startswith('$[') and value.endswith(']'):
+                        # Apply transformations
+                        keyword = value[2:-1]
+                        # Check if supported keyword e.g. alfred_ssm_, alfred_genaz_, alfred_getaz_, alfred_genuuid, etcself.
+                        if keyword.startswith('alfred_ssm_'):
+                            ssm_param_name = self._extract_string(keyword, 'alfred_ssm_')
 
-                        if ssm_param_name:
-                            # If this flag is True, it will replace the SSM parameter name i.e. /org/member/ss/directory-name with its
-                            # value i.e. example, whereas if its False, it will leave the parameter name as-is
-                            if substitute_ssm_values:
-                                value = self._get_ssm_params(ssm_param_name)
-                        else:
-                            raise Exception("Missing SSM parameter name for: {} in the parameters JSON file.".format(key))
-                    elif keyword.startswith('alfred_genkeypair'):
-                        keymaterial_param_name = None
-                        keyfingerprint_param_name = None
-                        keyname_param_name = None
-                        ssm_parameters = param.get('ssm_parameters', [])
-                        if type(ssm_parameters) is list:
-                            for ssm_parameter in ssm_parameters:
-                                val = ssm_parameter.get('value')[2:-1]
-                                if val.lower() == 'keymaterial':
-                                    keymaterial_param_name = ssm_parameter.get('name')
-                                elif val.lower() == 'keyfingerprint':
-                                    keyfingerprint_param_name = ssm_parameter.get('name')
-                                elif val.lower() == 'keyname':
-                                    keyname_param_name = ssm_parameter.get('name')
-                        value = self.create_key_pair(account, region, keymaterial_param_name, keyfingerprint_param_name, keyname_param_name)
-                    elif keyword.startswith('alfred_genpass_'):
-                        sub_string = self._extract_string(keyword, 'alfred_genpass_')
-                        if sub_string:
-                            pw_length = int(sub_string)
-                        else:
-                            pw_length = 8
+                            if ssm_param_name:
+                                # If this flag is True, it will replace the SSM parameter name i.e. /org/member/ss/directory-name with its
+                                # value i.e. example, whereas if its False, it will leave the parameter name as-is
+                                if substitute_ssm_values:
+                                    value = self._get_ssm_params(ssm_param_name)
+                            else:
+                                raise Exception("Missing SSM parameter name for: {} in the parameters JSON file.".format(key))
+                        elif keyword.startswith('alfred_genkeypair'):
+                            keymaterial_param_name = None
+                            keyfingerprint_param_name = None
+                            keyname_param_name = None
+                            ssm_parameters = param.get('ssm_parameters', [])
+                            if type(ssm_parameters) is list:
+                                for ssm_parameter in ssm_parameters:
+                                    val = ssm_parameter.get('value')[2:-1]
+                                    if val.lower() == 'keymaterial':
+                                        keymaterial_param_name = ssm_parameter.get('name')
+                                    elif val.lower() == 'keyfingerprint':
+                                        keyfingerprint_param_name = ssm_parameter.get('name')
+                                    elif val.lower() == 'keyname':
+                                        keyname_param_name = ssm_parameter.get('name')
+                            value = self.create_key_pair(account, region, keymaterial_param_name, keyfingerprint_param_name, keyname_param_name)
+                        elif keyword.startswith('alfred_genpass_'):
+                            sub_string = self._extract_string(keyword, 'alfred_genpass_')
+                            if sub_string:
+                                pw_length = int(sub_string)
+                            else:
+                                pw_length = 8
 
-                        password_param_name = None
-                        ssm_parameters = param.get('ssm_parameters', [])
-                        if type(ssm_parameters) is list:
-                            for ssm_parameter in ssm_parameters:
-                                val = ssm_parameter.get('value')[2:-1]
-                                if val.lower() == 'password':
-                                    password_param_name = ssm_parameter.get('name')
-                        value = self.random_password(pw_length, password_param_name, False)
-                    elif keyword.startswith('alfred_genaz_'):
-                        sub_string = self._extract_string(keyword, 'alfred_genaz_')
-                        if sub_string:
-                            no_of_az = int(sub_string)
-                        else:
-                            no_of_az = 2
+                            password_param_name = None
+                            ssm_parameters = param.get('ssm_parameters', [])
+                            if type(ssm_parameters) is list:
+                                for ssm_parameter in ssm_parameters:
+                                    val = ssm_parameter.get('value')[2:-1]
+                                    if val.lower() == 'password':
+                                        password_param_name = ssm_parameter.get('name')
+                            value = self.random_password(pw_length, password_param_name, False)
+                        elif keyword.startswith('alfred_genaz_'):
+                            sub_string = self._extract_string(keyword, 'alfred_genaz_')
+                            if sub_string:
+                                no_of_az = int(sub_string)
+                            else:
+                                no_of_az = 2
 
-                        az_param_name = None
-                        ssm_parameters = param.get('ssm_parameters', [])
-                        if type(ssm_parameters) is list:
-                            for ssm_parameter in ssm_parameters:
-                                val = ssm_parameter.get('value')[2:-1]
-                                if val.lower() == 'az':
-                                    az_param_name = ssm_parameter.get('name')
-                        value = self.get_azs_from_member_account(region, no_of_az, account, az_param_name)
-                    else:
-                        value = keyword
+                            az_param_name = None
+                            ssm_parameters = param.get('ssm_parameters', [])
+                            if type(ssm_parameters) is list:
+                                for ssm_parameter in ssm_parameters:
+                                    val = ssm_parameter.get('value')[2:-1]
+                                    if val.lower() == 'az':
+                                        az_param_name = ssm_parameter.get('name')
+                            value = self.get_azs_from_member_account(region, no_of_az, account, az_param_name)
+                        else:
+                            value = keyword
 
                 params_out.update({key: value})
 

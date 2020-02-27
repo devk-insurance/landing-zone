@@ -46,6 +46,8 @@ def cloudformation(event, function_name):
         response = stack_set.delete_stack_set()
     elif function_name == 'delete_stack_instances':
         response = stack_set.delete_stack_instances()
+    elif function_name == 'reroute_to_delete_stack_instances':
+        response = stack_set.reroute_to_delete_stack_instances()
     else:
         message = "Function name does not match any function in the handler file."
         logger.info(message)
@@ -356,6 +358,8 @@ def general_functions(event, function_name):
         response = gf.account_initialization_check()
     elif function_name == 'send_execution_data':
         response = gf.send_execution_data()
+    elif function_name == 'random_wait':
+        response = gf.random_wait()
     else:
         message = "Function name does not match any function in the handler file."
         logger.info(message)

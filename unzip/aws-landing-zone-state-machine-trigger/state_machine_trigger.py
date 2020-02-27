@@ -9,7 +9,7 @@ from os import environ
 from lib.organizations import Organizations
 from lib.manifest import Manifest
 from lib.params import ParamsHandler
-from lib.helper import sanitize, transform_params, reverse_transform_params, convert_s3_url_to_http_url, convert_http_url_to_s3_url, trim_length
+from lib.helper import sanitize, transform_params, reverse_transform_params, convert_s3_url_to_http_url, convert_http_url_to_s3_url, trim_length, download_remote_file
 from lib.cloudformation import StackSet
 import inspect
 import os
@@ -78,34 +78,9 @@ class StateMachineTriggerLambda(object):
             s3_url = "{}{}{}{}".format('https://s3.amazonaws.com/', self.staging_bucket, '/', remote_file)
         return s3_url
 
-    def _download_remote_file(self, remote_s3_path):
-        _file = tempfile.mkstemp()[1]
-        t = remote_s3_path.split("/", 3) # s3://bucket-name/key
-        remote_bucket = t[2] # Bucket name
-        remote_key = t[3] # Key
-        logger.info("Downloading {}/{} from S3 to {}".format(remote_bucket, remote_key, _file))
-        self.s3.download_file(remote_bucket, remote_key, _file)
-        return _file
-
-    def _load_policy(self, relative_policy_path):
-        if relative_policy_path.lower().startswith('s3'):
-            policy_file = self._download_remote_file(relative_policy_path)
-        else:
-            policy_file = os.path.join(self.manifest_folder, relative_policy_path)
-
-        logger.info("Parsing the policy file: {}".format(policy_file))
-
-        with open(policy_file, 'r') as content_file:
-            policy_file_content = content_file.read()
-
-        #Check if valid json
-        json.loads(policy_file_content)
-        #Return the Escaped JSON text
-        return policy_file_content.replace('"', '\"').replace('\n', '\r\n')
-
     def _load_params(self, relative_parameter_path, account = None, region = None):
         if relative_parameter_path.lower().startswith('s3'):
-            parameter_file = self._download_remote_file(relative_parameter_path)
+            parameter_file = download_remote_file(self.logger, relative_parameter_path)
         else:
             parameter_file = os.path.join(self.manifest_folder, relative_parameter_path)
 
@@ -204,12 +179,12 @@ class StateMachineTriggerLambda(object):
 
         return self._create_state_machine_input_map(input_params)
 
-    def _create_service_control_policy_state_machine_input_map(self, policy_name, policy_content, policy_desc='', ou_list=[]):
+    def _create_service_control_policy_state_machine_input_map(self, policy_name, policy_full_path, policy_desc='', ou_list=[]):
         input_params = {}
         policy_doc = {}
         policy_doc.update({'Name': sanitize(policy_name)})
         policy_doc.update({'Description': policy_desc})
-        policy_doc.update({'Content': policy_content})
+        policy_doc.update({'PolicyURL': policy_full_path})
         input_params.update({'PolicyDocument': policy_doc})
         input_params.update({'AccountId': ''})
         input_params.update({'PolicyList': []})
@@ -324,7 +299,7 @@ class StateMachineTriggerLambda(object):
                 template_http_url = sm_input.get('ResourceProperties').get('TemplateURL', '')
                 if template_http_url:
                     template_s3_url = convert_http_url_to_s3_url(template_http_url)
-                    local_template_file = self._download_remote_file(template_s3_url)
+                    local_template_file = download_remote_file(self.logger, template_s3_url)
                 else:
                     self.logger.error("TemplateURL in state machine input is empty. Check sm_input:{}".format(sm_input))
                     return False
@@ -553,8 +528,8 @@ class StateMachineTriggerLambda(object):
                 for ou in detach_ou_list:
                     ou_list.append((ou, 'Detach'))
 
-                policy_content = self._load_policy(policy.policy_file)
-                sm_input = self._create_service_control_policy_state_machine_input_map(policy.name, policy_content,
+                policy_full_path = self._stage_template(policy.policy_file)
+                sm_input = self._create_service_control_policy_state_machine_input_map(policy.name, policy_full_path,
                                                                                        policy.description, ou_list)
                 self._run_or_queue_state_machine(sm_input, sm_arn_scp, list_sm_exec_arns, policy.name)
                 # Count number of stacksets

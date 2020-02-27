@@ -1,14 +1,14 @@
 [
   {
-    "ParameterKey": "LoggingAccountId",
-    "ParameterValue": "$[alfred_ssm_/org/member/logging/account_id]"
-  },
-  {
     "ParameterKey": "SSEAlgorithm",
     "ParameterValue": "AES256"
   },
   {
       "ParameterKey": "KMSMasterKeyID",
       "ParameterValue": ""
+  },
+  {
+      "ParameterKey": "AWSLogsS3KeyPrefix",
+      "ParameterValue": "$[alfred_ssm_/org/primary/organization_id]"
   }
 ]

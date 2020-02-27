@@ -296,14 +296,10 @@ class GuardDuty(object):
 
             detector_id = self.event.get('MemberDetectorId')  # member
             # Obtaining Relationship status with master account.
-            response = guardduty.get_master_account(detector_id)
+            relationship_status = guardduty.get_relationship_status(detector_id)
             self.logger.info("Get Master Account (get_master_account) Response")
-            self.logger.info(response)
-            relationship_status = response.get('Master', {}).get('RelationshipStatus')
-            if relationship_status is not None:
-             self.event.update({'RelationshipStatus': relationship_status.lower()})
-            else:
-                raise Exception("LZ Raising Exception: Relationship status not found.")
+            self.logger.info(relationship_status)
+            self.event.update({'RelationshipStatus': relationship_status.lower()})
             return self.event
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,

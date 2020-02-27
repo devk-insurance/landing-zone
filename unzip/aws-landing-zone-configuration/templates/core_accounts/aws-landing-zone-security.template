@@ -14,6 +14,13 @@ Parameters:
 Resources:
   AdministrationRole:
     Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "Allow * in the ARN of the execution role to allow cross account access to user created child account in the AWS Organizations"
+          - id: W28
+            reason: "The role name is defined to identify AWS Landing Zone resources."
     Properties:
       RoleName: AWSLandingZoneSecurityAdministratorRole
       AssumeRolePolicyDocument:
@@ -37,6 +44,13 @@ Resources:
                   - "arn:aws:iam::*:role/AWSLandingZoneAdminExecutionRole"
   ReadOnlyRole:
     Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "Allow * in the ARN of the execution role to allow cross account access to user created child account in the AWS Organizations"
+          - id: W28
+            reason: "The role name is defined to identify AWS Landing Zone resources."
     Properties:
       RoleName: AWSLandingZoneSecurityReadOnlyRole
       AssumeRolePolicyDocument:

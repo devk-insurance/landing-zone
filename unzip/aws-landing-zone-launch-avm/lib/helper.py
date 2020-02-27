@@ -15,7 +15,9 @@ import re
 import boto3
 from os import environ
 from urllib.parse import urlparse
-
+import inspect
+import tempfile
+from lib.s3 import S3
 
 def sanitize(name, space_allowed=False, replace_with_character='_'):
     # This function will replace any character other than [a-zA-Z0-9._-] with '_'
@@ -117,3 +119,21 @@ def convert_http_url_to_s3_url(http_url):
     s3key = t[2]
     s3_url = "s3://{}/{}".format(s3bucket, s3key)
     return s3_url
+
+
+def download_remote_file(logger, remote_s3_path):
+    try:
+        _file = tempfile.mkstemp()[1]
+        t = remote_s3_path.split("/", 3) # s3://bucket-name/key
+        remote_bucket = t[2] # Bucket name
+        remote_key = t[3] # Key
+        logger.info("Downloading {}/{} from S3 to {}".format(remote_bucket, remote_key, _file))
+        s3 = S3(logger)
+        s3.download_file(remote_bucket, remote_key, _file)
+        return _file
+    except Exception as e:
+        message = {'FILE': __file__.split('/')[-1],
+                   'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+        logger.exception(message)
+        raise
+

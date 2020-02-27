@@ -46,5 +46,9 @@
   {
     "ParameterKey": "SecurityNotificationTopicArn",
     "ParameterValue": "$[alfred_ssm_/org/primary/sns_notification_arn]"
+  },
+  {
+      "ParameterKey": "AWSLogsS3KeyPrefix",
+      "ParameterValue": "$[alfred_ssm_/org/primary/organization_id]"
   }
 ]

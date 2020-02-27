@@ -33,9 +33,11 @@ import inspect
 import time
 import os
 import json
-from lib.helper import sanitize, convert_http_url_to_s3_url
+from lib.helper import sanitize, convert_http_url_to_s3_url, download_remote_file
 import tempfile
 import filecmp
+import time
+from random import randint
 
 
 class CloudFormation(object):
@@ -191,6 +193,7 @@ class CloudFormation(object):
                 self.event.update({'InstanceExist': 'no'})
                 self.event.update({'NextToken': 'Complete'})
                 self.event.update({'CreateInstance': 'no'})
+                self.event.update({'DeleteInstance': 'no'})
                 return self.event
             else:
                 if self.event.get('NextToken') is not None and self.event.get('NextToken') != 'Complete':
@@ -212,7 +215,8 @@ class CloudFormation(object):
                     if not response.get('Summaries'):  # 'True' if list is empty
                         self.event.update({'InstanceExist': 'no'})
                         self.event.update({'NextToken': 'Complete'}) # exit loop
-                        self.event.update({'CreateInstance': 'yes'}) # create stack instance
+                        self.event.update({'CreateInstance': 'yes'}) # create stack instance set to yes
+                        self.event.update({'DeleteInstance': 'no'})  # delete stack instance set to no
                         self.logger.info("No existing stack instances found. (Summaries List: Empty)")
                         return self.event
                     else:
@@ -239,17 +243,19 @@ class CloudFormation(object):
 
                         if response.get('NextToken') is None:
                             # replace the region list in the self.event
-                            event_set = set(self.params.get('RegionList'))
-                            existing_set = set(existing_region_list)
-                            new_region_list = list(event_set - event_set.intersection(existing_set))
-                            if new_region_list:
-                                self.params.update({'RegionList': new_region_list})
-                                self.event.update({'ResourceProperties': self.params})
-                                self.event.update({'CreateInstance': 'yes'})
-                                self.event.update({'NextToken': 'Complete'})
-                            else:
-                                self.event.update({'CreateInstance': 'no'})
-                                self.event.update({'NextToken': 'Complete'})
+                            add_region_list = self._add_region_list(existing_region_list)
+                            self.logger.info("Add region list: {}".format(add_region_list))
+
+                            # Build a region list if the event is from AVM
+                            if self.params.get('TemplateURL') == "":  # Event from AVM (CFN) - limit this functionality to baseline resources
+                                delete_region_list = self._delete_region_list(existing_region_list)
+                                self.logger.info("Delete region list: {}".format(delete_region_list))
+                            else: # this condition blocks the core resource stage to delete stack instances
+                                delete_region_list = []
+
+                            self._update_event_for_add(add_region_list)
+                            self._update_event_for_delete(delete_region_list)
+
                         else:
                             self.event.update({'NextToken': response.get('NextToken')})
                             # Update the self.event with existing_region_list
@@ -262,6 +268,38 @@ class CloudFormation(object):
             gf = GeneralFunctions(self.event, self.logger)
             gf.send_failure_to_cfn()
             raise
+
+    def _update_event_for_delete(self, delete_region_list):
+        if delete_region_list:
+            self.event.update({'DeleteRegionList': delete_region_list})
+            self.event.update({'DeleteInstance': 'yes'})
+            self.event.update({'NextToken': 'Complete'})
+        else:
+            self.event.update({'DeleteInstance': 'no'})
+            self.event.update({'NextToken': 'Complete'})
+
+    def _update_event_for_add(self, add_region_list):
+        if add_region_list:
+            self.event.update({'AddRegionList': add_region_list})
+            self.params.update({'RegionList': add_region_list})
+            self.event.update({'ResourceProperties': self.params})
+            self.event.update({'CreateInstance': 'yes'})
+            self.event.update({'NextToken': 'Complete'})
+        else:
+            self.event.update({'CreateInstance': 'no'})
+            self.event.update({'NextToken': 'Complete'})
+
+    def _add_region_list(self, existing_region_list):
+        event_set = set(self.params.get('RegionList'))
+        existing_set = set(existing_region_list)
+        add_region_list = list(event_set - event_set.intersection(existing_set))
+        return add_region_list
+
+    def _delete_region_list(self, existing_region_list):
+        event_set = set(self.params.get('RegionList'))
+        existing_set = set(existing_region_list)
+        delete_region_list = list(event_set.union(existing_set) - event_set)
+        return delete_region_list
 
     def _get_ssm_secure_string(self, parameters):
         if parameters.get('ALZRegion'):
@@ -284,6 +322,24 @@ class CloudFormation(object):
                 copy.update({key: decapsulated_value})
         return copy
 
+    def reroute_to_delete_stack_instances(self):
+        try:
+            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
+            self.logger.info(self.params)
+
+            # Update RegionList with DeleteRegionList
+            self.params.update({'RegionList': self.event.get('DeleteRegionList')})
+            self.event.update({'ResourceProperties': self.params})
+
+            return self.event
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            gf = GeneralFunctions(self.event, self.logger)
+            gf.send_failure_to_cfn()
+            raise
+
     def create_stack_set(self):
         try:
             self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
@@ -302,6 +358,10 @@ class CloudFormation(object):
             else:
                 value = "failure"
             self.event.update({'StackSetStatus': value})
+            # set create stack instance flag to yes (Handle SM Condition: Create or Delete Stack Instance?)
+            self.event.update({'CreateInstance': 'yes'})
+            # set delete stack instance flag to no (Handle SM Condition: Delete Stack Instance or Finish?)
+            self.event.update({'DeleteInstance': 'no'})
             return self.event
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
@@ -398,6 +458,8 @@ class CloudFormation(object):
             self.logger.info(response)
             self.logger.info("Operation ID: {}".format(response.get('OperationId')))
             self.event.update({'OperationId': response.get('OperationId')})
+            # need for Delete Stack Instance or Finish? choice in the state machine. No will route to Finish path.
+            self.event.update({'DeleteInstance': 'no'})
             return self.event
 
         except Exception as e:
@@ -1656,24 +1718,6 @@ class ServiceCatalog(object):
             gf.send_failure_to_cfn()
             raise
 
-    def _download_remote_file(self, remote_s3_path):
-        try:
-            _file = tempfile.mkstemp()[1]
-            t = remote_s3_path.split("/", 3) # s3://bucket-name/key
-            remote_bucket = t[2] # Bucket name
-            remote_key = t[3] # Key
-            self.logger.info("Downloading {}/{} from S3 to {}".format(remote_bucket, remote_key, _file))
-            s3 = S3(self.logger)
-            s3.download_file(remote_bucket, remote_key, _file)
-            return _file
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            gf = GeneralFunctions(self.event, self.logger)
-            gf.send_failure_to_cfn()
-            raise
-
     def _rewrite_file_with_invert_match(self, local_old_template_file, old_template_file, exclude_key):
         try:
             with open(old_template_file, 'w') as new_file:
@@ -1699,13 +1743,13 @@ class ServiceCatalog(object):
             # download new template file
             new_template_http_url = self.params.get('SCProduct', {}).get('ProvisioningArtifactParameters').get('Info').get('LoadTemplateFromURL')
             new_template_s3_url = convert_http_url_to_s3_url(new_template_http_url)
-            local_new_template_file = self._download_remote_file(new_template_s3_url)
+            local_new_template_file = download_remote_file(self.logger, new_template_s3_url)
 
             # download existing template file
             response_describe_artifact = sc.describe_provisioning_artifact(product_id, artifact_id)
             old_template_http_url = response_describe_artifact.get('Info').get('TemplateUrl')
             old_template_s3_url = convert_http_url_to_s3_url(old_template_http_url)
-            local_old_template_file = self._download_remote_file(old_template_s3_url)
+            local_old_template_file = download_remote_file(self.logger, old_template_s3_url)
 
             old_template_file = tempfile.mkstemp()[1] # [1] == os.path.abspath(file)
             new_template_file = tempfile.mkstemp()[1]
@@ -1958,6 +2002,14 @@ class ServiceCatalog(object):
             if status != 'SUCCEEDED':
                 product_details = self._provisioned_products_status(sc, provisioned_product_id)
                 self.event.update({key: product_details})
+                # ONLY if service catalog provision product FAILS due to
+                # "Error calling API cloudformation:UpdateStack. ErrorCode: Throttling, Message: Rate exceeded"
+                # then Retry after random wait time
+                if status == 'FAILED':
+                    status_message = product_details.get('ProvisionedProductStatusMessage','')
+                    self.logger.info(status_message)
+                    if ("updatestack" in status_message.lower()) and ("throttling" in status_message.lower()):
+                        self.event.update({'ProvisioningStatus': "RETRY"})
             else:
                 detail_value = self.event.get(key)
                 if self.event.get('RequestType') == 'Delete':
@@ -2017,9 +2069,9 @@ class ServiceCatalog(object):
                 self.logger.info("stack_name={}".format(stack_name))
 
                 cfn = Stacks(self.logger)
-
+                resp = {}
                 try:
-                    response = cfn.describe_stacks(stack_name)
+                    resp = cfn.describe_stacks(stack_name)
                 except ClientError as e:
                     self.logger.error(e.response)
                     error_info = e.response.get('Error')
@@ -2032,7 +2084,7 @@ class ServiceCatalog(object):
                         self.logger.info('Skip this provisioned product, move on to the next one or should we terminate this provisioned product?')
                         continue
 
-                stacks = response.get('Stacks')
+                stacks = resp.get('Stacks')
 
                 if stacks is not None and type(stacks) is list:
                     for stack in stacks:
@@ -2147,6 +2199,20 @@ class ServiceControlPolicy(object):
         self.logger.info(self.__class__.__name__ + " Class Event")
         self.logger.info(event)
 
+    def _load_policy(self, relative_policy_path):
+        policy_file = download_remote_file(self.logger, relative_policy_path)
+
+        self.logger.info("Parsing the policy file: {}".format(policy_file))
+
+        with open(policy_file, 'r') as content_file:
+            policy_file_content = content_file.read()
+
+        #Check if valid json
+        json.loads(policy_file_content)
+        #Return the Escaped JSON text
+        return policy_file_content.replace('"', '\"').replace('\n', '\r\n').replace(" ", "")
+
+
     def list_policies(self):
         try:
             self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
@@ -2193,9 +2259,12 @@ class ServiceControlPolicy(object):
 
             scp = SCP(self.logger)
             self.logger.info("Creating Service Control Policy")
+            policy_s3_url = convert_http_url_to_s3_url(policy_doc.get('PolicyURL'))
+            policy_content = self._load_policy(policy_s3_url)
+
             response = scp.create_policy(policy_doc.get('Name'),
                                          policy_doc.get('Description'),
-                                         policy_doc.get('Content'))
+                                         policy_content)
             self.logger.info("Create SCP Response")
             self.logger.info(response)
             policy_id = response.get('Policy').get('PolicySummary').get('Id')
@@ -2216,12 +2285,14 @@ class ServiceControlPolicy(object):
             self.logger.info(self.params)
             policy_doc = self.params.get('PolicyDocument')
             policy_id = self.event.get('PolicyId')
+            policy_s3_url = convert_http_url_to_s3_url(policy_doc.get('PolicyURL'))
+            policy_content = self._load_policy(policy_s3_url)
 
             scp = SCP(self.logger)
             self.logger.info("Updating Service Control Policy")
             response = scp.update_policy(policy_id, policy_doc.get('Name'),
                                          policy_doc.get('Description'),
-                                         policy_doc.get('Content'))
+                                         policy_content)
             self.logger.info("Update SCP Response")
             self.logger.info(response)
             policy_id = response.get('Policy').get('PolicySummary').get('Id')
@@ -2801,6 +2872,16 @@ class GeneralFunctions(object):
             send = Metrics(self.logger)
             data = {"StateMachineExecutionCount": "1"}
             send.metrics(data)
+            return self.event
+        except:
+            return self.event
+
+    def random_wait(self):
+        try:
+            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
+            # Random wait between 1 to 14 minutes
+            _seconds = randint(60, 840)
+            time.sleep(_seconds)
             return self.event
         except:
             return self.event

@@ -84,5 +84,9 @@
     {
         "ParameterKey": "LogsRetentionInDays",
         "ParameterValue": {{ logs_retention_in_days }}
+    },
+    {
+        "ParameterKey": "ManagedResourcePrefix",
+        "ParameterValue": "aws-landing-zone"
     }
 ]

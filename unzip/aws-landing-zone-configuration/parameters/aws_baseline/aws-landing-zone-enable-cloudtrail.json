@@ -34,5 +34,9 @@
   {
       "ParameterKey": "TrailBucket",
       "ParameterValue": "$[alfred_ssm_/org/member/logging/bucket_name]"
+  },
+  {
+    "ParameterKey": "AWSLogsS3KeyPrefix",
+    "ParameterValue": "$[alfred_ssm_/org/primary/organization_id]"
   }
 ]

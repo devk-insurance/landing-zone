@@ -16,6 +16,7 @@
 
 import boto3
 import inspect
+from lib.decorator import try_except_retry
 
 sc_client = boto3.client('servicecatalog')
 
@@ -346,6 +347,7 @@ class ServiceCatalog(object):
             self.logger.exception(message)
             raise
 
+    @try_except_retry()
     def update_provisioned_product(self, product_id, artifact_id, provisioned_product_id, params):
         try:
             response = sc_client.update_provisioned_product(
@@ -373,6 +375,7 @@ class ServiceCatalog(object):
             self.logger.exception(message)
             raise
 
+    @try_except_retry()
     def describe_record(self, record_id):
         try:
             response = sc_client.describe_record(
@@ -385,6 +388,7 @@ class ServiceCatalog(object):
             self.logger.exception(message)
             raise
 
+    @try_except_retry()
     def describe_provisioned_product(self, pp_id):
         '''
         :param pp_id:
@@ -421,6 +425,7 @@ class ServiceCatalog(object):
             self.logger.exception(message)
             raise
 
+    @try_except_retry()
     def search_provisioned_products(self, product_id, next_token='0'):
         try:
             search_query = "productId:{}".format(product_id)

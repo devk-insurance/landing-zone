@@ -193,6 +193,7 @@
             }
         },
         "MicrosoftAD": {
+            "DeletionPolicy" : "Retain",
             "Type": "AWS::DirectoryService::MicrosoftAD",
             "Properties": {
                 "Name": {

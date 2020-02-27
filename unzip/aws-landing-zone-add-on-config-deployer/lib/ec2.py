@@ -230,7 +230,8 @@ class EC2(object):
             self.logger.exception(message)
             raise
 
-    def describe_vpc_peering_connections_by_filters(self, requester_account_id, requester_vpc_id, accepter_account_id, accepter_vpc_id):
+    def describe_vpc_peering_connections_by_filters(self, requester_account_id, requester_vpc_id, accepter_account_id,
+                                                    accepter_vpc_id, status_code='active'):
         try:
             response = self.ec2_client.describe_vpc_peering_connections(
                 Filters=[
@@ -249,6 +250,10 @@ class EC2(object):
                     {
                         'Name': 'accepter-vpc-info.vpc-id',
                         'Values': [accepter_vpc_id]
+                    },
+                    {
+                        'Name': 'status-code',
+                        'Values': [status_code]
                     },
                 ],
             )

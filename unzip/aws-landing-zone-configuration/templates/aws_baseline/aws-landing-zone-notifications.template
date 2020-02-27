@@ -141,6 +141,11 @@ Resources:
         MetricValue: '1'
   SecurityGroupChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     Condition: EnableSecurityGroupChange
     Properties:
       AlarmName: CloudTrailSecurityGroupChanges
@@ -172,6 +177,11 @@ Resources:
         MetricValue: '1'
   NetworkAclChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: SecurityGroupChangesAlarm
     Condition: EnableNetworkAclChange
     Properties:
@@ -204,6 +214,11 @@ Resources:
         MetricValue: '1'
   GatewayChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: NetworkAclChangesAlarm
     Condition: EnableGatewayChange
     Properties:
@@ -238,6 +253,11 @@ Resources:
         MetricValue: '1'
   VpcChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: GatewayChangesAlarm
     Condition: EnableVpcChange
     Properties:
@@ -269,6 +289,11 @@ Resources:
         MetricValue: '1'
   EC2InstanceChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: VpcChangesAlarm
     Condition: EnableEc2InstanceChange
     Properties:
@@ -308,6 +333,11 @@ Resources:
         MetricValue: '1'
   EC2LargeInstanceChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: EC2InstanceChangesAlarm
     Condition: EnableEc2LargeInstanceChange
     Properties:
@@ -339,6 +369,11 @@ Resources:
         MetricValue: '1'
   CloudTrailChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: EC2LargeInstanceChangesAlarm
     Condition: EnableCloudTrailChange
     Properties:
@@ -369,6 +404,11 @@ Resources:
         MetricValue: '1'
   ConsoleSignInFailuresAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: CloudTrailChangesAlarm
     Condition: EnableConsoleSignInFailure
     Properties:
@@ -399,6 +439,11 @@ Resources:
         MetricValue: '1'
   AuthorizationFailuresAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: ConsoleSignInFailuresAlarm
     Condition: EnableAuthorizationFailure
     Properties:
@@ -427,6 +472,11 @@ Resources:
         MetricValue: '1'
   IAMPolicyChangesAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: AuthorizationFailuresAlarm
     Condition: EnableIamPolicyChanges
     Properties:
@@ -455,6 +505,11 @@ Resources:
         MetricValue: '1'
   RootLoginAlarm:
     Type: AWS::CloudWatch::Alarm
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The alarm name is defined to identify AWS Landing Zone resources."
     DependsOn: IAMPolicyChangesAlarm
     Condition: EnableRootLogin
     Properties:

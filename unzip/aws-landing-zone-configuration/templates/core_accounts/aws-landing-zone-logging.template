@@ -2,9 +2,6 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Create a S3 logging bucket in the logging account.
 
 Parameters:
-  LoggingAccountId:
-    Type: 'String'
-    Description: AWS Account Id of the logging account.
   SSEAlgorithm:
     Type: 'String'
     Default: 'AES256'
@@ -15,6 +12,9 @@ Parameters:
   KMSMasterKeyID:
     Type: 'String'
     Description: 'KMS key ID required if SSE algorithm is aws:kms.'
+  AWSLogsS3KeyPrefix:
+    Type: 'String'
+    Description: 'Organization ID to use as the S3 Key prefix for storing the audit logs'
 
 Conditions:
   UseKMS: !Equals
@@ -30,6 +30,11 @@ Resources:
     DeletionPolicy: Retain
     Condition: UseKMS
     Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "This S3 bucket is used as the destination for 'S3KmsBucket'"
     Properties:
       BucketName: !Sub aws-landing-zone-s3-access-logs-${AWS::AccountId}-${AWS::Region}
       AccessControl: LogDeliveryWrite
@@ -49,7 +54,7 @@ Resources:
       VersioningConfiguration:
         Status: Enabled
       LoggingConfiguration:
-        DestinationBucketName: !Ref S3LoggingBucket
+        DestinationBucketName: !Ref S3KmsLoggingBucket
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -84,14 +89,19 @@ Resources:
                         - ""
                         -
                           - "arn:aws:s3:::"
-                          - !Ref "S3Bucket"
-                          - "/AWSLogs/*/*"
+                          - !Ref "S3KmsBucket"
+                          - !Sub "/${AWSLogsS3KeyPrefix}/AWSLogs/*/*"
 
   # Create buckets using S3-SSE keys for default encryption
   S3LoggingBucket:
     DeletionPolicy: Retain
     Condition: UseAES256
     Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "This S3 bucket is used as the destination for 'S3Bucket'"
     Properties:
       BucketName: !Sub aws-landing-zone-s3-access-logs-${AWS::AccountId}-${AWS::Region}
       AccessControl: LogDeliveryWrite
@@ -145,7 +155,7 @@ Resources:
                         -
                           - "arn:aws:s3:::"
                           - !Ref "S3Bucket"
-                          - "/AWSLogs/*/*"
+                          - !Sub "/${AWSLogsS3KeyPrefix}/AWSLogs/*/*"
 
 Outputs:
   BucketName:
@@ -154,3 +164,6 @@ Outputs:
   LoggingBucketName:
     Description: AWS Landing Zone s3 access logs bucket name
     Value: !If [UseAES256, !Ref S3LoggingBucket, !Ref S3KmsLoggingBucket]
+  AuditLogsS3KeyPrefix:
+    Description: S3 Key prefix for storing the audit logs
+    Value: !Ref AWSLogsS3KeyPrefix

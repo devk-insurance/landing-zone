@@ -78,6 +78,9 @@ Parameters:
     Default: ''
     Description: The Amazon Resource Name (ARN) of the Amazon Simple Notification Service (Amazon SNS) topic that aggregates All security notifications.
 
+  AWSLogsS3KeyPrefix:
+    Type: 'String'
+    Description: 'Organization ID to use as the S3 Key prefix for storing the audit logs'
 
 Conditions:
   IsAllSupported: !Equals
@@ -104,6 +107,7 @@ Resources:
   ConfigRecorder:
     Type: AWS::Config::ConfigurationRecorder
     Properties:
+      Name: AWS-Landing-Zone-BaselineConfigRecorder
       RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/AWS-Landing-Zone-ConfigRecorderRole
       RecordingGroup:
         AllSupported: !Ref AllSupported
@@ -126,6 +130,7 @@ Resources:
           - FrequencyMap
           - !Ref Frequency
       S3BucketName: !Ref BucketName
+      S3KeyPrefix: !Ref AWSLogsS3KeyPrefix
       SnsTopicARN: !Join
           - ':'
           - - 'arn:aws'

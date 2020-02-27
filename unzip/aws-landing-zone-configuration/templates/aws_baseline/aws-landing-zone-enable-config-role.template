@@ -5,6 +5,11 @@ Resources:
 
   ConfigRecorderRole:
     Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+            - id: W28
+              reason: "The role name is defined to identify AWS Landing Zone resources."
     Properties:
       RoleName: AWS-Landing-Zone-ConfigRecorderRole
       AssumeRolePolicyDocument:

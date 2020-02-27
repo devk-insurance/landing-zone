@@ -12,5 +12,9 @@
   {
     "ParameterKey": "NumberOfAZs",
     "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "ManagedResourcePrefix",
+    "ParameterValue": "aws-landing-zone"
   }
 ]

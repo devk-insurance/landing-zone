@@ -71,6 +71,9 @@ Metadata:
       LogsRetentionInDays:
         default: Flow Logs Retention In Days
 Parameters:
+  ManagedResourcePrefix:
+    Type: 'String'
+    Description: 'Prefix for the managed resources'
   AvailabilityZones:
     Description: 'List of Availability Zones to use for the subnets in the VPC.'
     Type: CommaDelimitedList
@@ -206,20 +209,26 @@ Conditions:
 Resources:
   DHCPOptions:
     Type: AWS::EC2::DHCPOptions
+    DeletionPolicy: Retain
     Properties:
       DomainName: !If [NVirginiaRegionCondition, ec2.internal, !Join ['', [!Ref 'AWS::Region',
             .compute.internal]]]
       DomainNameServers:
         - AmazonProvidedDNS
+      Tags:
+        - Key: Name
+          Value: !Sub ${ManagedResourcePrefix}-DHCPOptionsSet
+
   VPC:
     Type: AWS::EC2::VPC
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: !Ref 'VPCCIDR'
       EnableDnsSupport: 'true'
       EnableDnsHostnames: 'true'
       Tags:
         - Key: Name
-          Value: !Ref 'AWS::StackName'
+          Value: !Sub ${ManagedResourcePrefix}-VPC
         - !If
           - TransitVPCCondition
           - - Key: transitvpc:spoke
@@ -228,298 +237,359 @@ Resources:
 
   VPCDHCPOptionsAssociation:
     Type: AWS::EC2::VPCDHCPOptionsAssociation
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       DhcpOptionsId: !Ref 'DHCPOptions'
+
   InternetGateway:
     Type: AWS::EC2::InternetGateway
+    DeletionPolicy: Retain
     Condition: PublicSubnetsCondition
     Properties:
       Tags:
         - Key: Network
           Value: Public
+        - Key: Name
+          Value: !Sub ${ManagedResourcePrefix}-InternetGateway
+
   VPCGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Condition: PublicSubnetsCondition
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       InternetGatewayId: !Ref 'InternetGateway'
+
   PrivateSubnet1A:
     Condition: PrivateSubnetsCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet1ACIDR'
       AvailabilityZone: !Select ['0', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 1A
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet1A
         - Key: Network
           Value: Private
+
   PrivateSubnet1B:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet1BCIDR'
       AvailabilityZone: !Select ['0', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 1B
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet1B
         - Key: Network
           Value: Private
+
   PrivateSubnet2A:
     Condition: PrivateSubnetsCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet2ACIDR'
       AvailabilityZone: !Select ['1', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 2A
+          Value: !Sub ${ManagedResourcePrefix}-Private subnet 2A
         - Key: Network
           Value: Private
+
   PrivateSubnet2B:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet2BCIDR'
       AvailabilityZone: !Select ['1', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 2B
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet2B
         - Key: Network
           Value: Private
+
   PrivateSubnet3A:
     Condition: PrivateSubnets&3AZCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet3ACIDR'
       AvailabilityZone: !Select ['2', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 3A
+          Value: !Sub ${ManagedResourcePrefix}-Private subnet 3A
         - Key: Network
           Value: Private
+
   PrivateSubnet3B:
     Condition: AdditionalPrivateSubnets&3AZCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet3BCIDR'
       AvailabilityZone: !Select ['2', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 3B
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet3B
         - Key: Network
           Value: Private
+
   PrivateSubnet4A:
     Condition: PrivateSubnets&4AZCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet4ACIDR'
       AvailabilityZone: !Select ['3', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 4A
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet4A
         - Key: Network
           Value: Private
+
   PrivateSubnet4B:
     Condition: AdditionalPrivateSubnets&4AZCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PrivateSubnet4BCIDR'
       AvailabilityZone: !Select ['3', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Private subnet 4B
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet4B
         - Key: Network
           Value: Private
+
   PublicSubnet1:
     Condition: PublicSubnetsCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PublicSubnet1CIDR'
       AvailabilityZone: !Select ['0', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Public subnet 1
+          Value: !Sub ${ManagedResourcePrefix}-PublicSubnet1
         - Key: Network
           Value: Public
-      MapPublicIpOnLaunch: true
+
   PublicSubnet2:
     Condition: PublicSubnetsCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PublicSubnet2CIDR'
       AvailabilityZone: !Select ['1', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Public subnet 2
+          Value: !Sub ${ManagedResourcePrefix}-PublicSubnet2
         - Key: Network
           Value: Public
-      MapPublicIpOnLaunch: true
+
   PublicSubnet3:
     Condition: 3AZPublicCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PublicSubnet3CIDR'
       AvailabilityZone: !Select ['2', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Public subnet 3
+          Value: !Sub ${ManagedResourcePrefix}-PublicSubnet3
         - Key: Network
           Value: Public
-      MapPublicIpOnLaunch: true
+
   PublicSubnet4:
     Condition: 4AZPublicCondition
     Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       CidrBlock: !Ref 'PublicSubnet4CIDR'
       AvailabilityZone: !Select ['3', !Ref 'AvailabilityZones']
       Tags:
         - Key: Name
-          Value: Public subnet 4
+          Value: !Sub ${ManagedResourcePrefix}-PublicSubnet4
         - Key: Network
           Value: Public
-      MapPublicIpOnLaunch: true
+
   PrivateSubnet1ARouteTable:
     Condition: PrivateSubnetsCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 1A
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet1A
         - Key: Network
           Value: Private
+
   PrivateSubnet1ARoute:
     Condition: NATGatewayCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet1ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway1', !Ref 'AWS::NoValue']
+
   PrivateSubnet1ARouteTableAssociation:
     Condition: PrivateSubnetsCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet1A'
       RouteTableId: !Ref 'PrivateSubnet1ARouteTable'
+
   PrivateSubnet2ARouteTable:
     Condition: PrivateSubnetsCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 2A
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet2A
         - Key: Network
           Value: Private
+
   PrivateSubnet2ARoute:
     Condition: NATGatewayCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet2ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway2', !Ref 'AWS::NoValue']
+
   PrivateSubnet2ARouteTableAssociation:
     Condition: PrivateSubnetsCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet2A'
       RouteTableId: !Ref 'PrivateSubnet2ARouteTable'
+
   PrivateSubnet3ARouteTable:
     Condition: PrivateSubnets&3AZCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 3A
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet3A
         - Key: Network
           Value: Private
+
   PrivateSubnet3ARoute:
     Condition: NATGateway&3AZCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet3ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway3', !Ref 'AWS::NoValue']
+
   PrivateSubnet3ARouteTableAssociation:
     Condition: PrivateSubnets&3AZCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet3A'
       RouteTableId: !Ref 'PrivateSubnet3ARouteTable'
+
   PrivateSubnet4ARouteTable:
     Condition: PrivateSubnets&4AZCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 4A
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet4A
         - Key: Network
           Value: Private
+
   PrivateSubnet4ARoute:
     Condition: NATGateway&4AZCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet4ARouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway4', !Ref 'AWS::NoValue']
+
   PrivateSubnet4ARouteTableAssociation:
     Condition: PrivateSubnets&4AZCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet4A'
       RouteTableId: !Ref 'PrivateSubnet4ARouteTable'
+
   PrivateSubnet1BRouteTable:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 1B
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet1B
         - Key: Network
           Value: Private
+
   PrivateSubnet1BRoute:
     Condition: AdditionalPrivateSubnets&NATGatewayCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet1BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway1', !Ref 'AWS::NoValue']
+
   PrivateSubnet1BRouteTableAssociation:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet1B'
       RouteTableId: !Ref 'PrivateSubnet1BRouteTable'
+
   PrivateSubnet1BNetworkAcl:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::NetworkAcl
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: NACL Protected subnet 1
+          Value: !Sub ${ManagedResourcePrefix}-PrivateSubnet1BNetworkAcl
         - Key: Network
           Value: NACL Protected
+
   PrivateSubnet1BNetworkAclEntryInbound:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'false'
@@ -530,6 +600,7 @@ Resources:
   PrivateSubnet1BNetworkAclEntryOutbound:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'true'
@@ -537,48 +608,60 @@ Resources:
       Protocol: '-1'
       RuleAction: allow
       RuleNumber: '100'
+
   PrivateSubnet1BNetworkAclAssociation:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::SubnetNetworkAclAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet1B'
       NetworkAclId: !Ref 'PrivateSubnet1BNetworkAcl'
+
   PrivateSubnet2BRouteTable:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 2B
+          Value: !Sub ${ManagedResourcePrefix}-Private subnet 2B
         - Key: Network
           Value: Private
+
   PrivateSubnet2BRoute:
     Condition: AdditionalPrivateSubnets&NATGatewayCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet2BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway2', !Ref 'AWS::NoValue']
+
   PrivateSubnet2BRouteTableAssociation:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet2B'
       RouteTableId: !Ref 'PrivateSubnet2BRouteTable'
+
   PrivateSubnet2BNetworkAcl:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::NetworkAcl
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: NACL Protected subnet 2
+          Value: !Sub ${ManagedResourcePrefix}-NACL Protected subnet 2
         - Key: Network
           Value: NACL Protected
+
   PrivateSubnet2BNetworkAclEntryInbound:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'false'
@@ -586,9 +669,11 @@ Resources:
       Protocol: '-1'
       RuleAction: allow
       RuleNumber: '100'
+
   PrivateSubnet2BNetworkAclEntryOutbound:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'true'
@@ -596,48 +681,61 @@ Resources:
       Protocol: '-1'
       RuleAction: allow
       RuleNumber: '100'
+
+
   PrivateSubnet2BNetworkAclAssociation:
     Condition: AdditionalPrivateSubnetsCondition
     Type: AWS::EC2::SubnetNetworkAclAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet2B'
       NetworkAclId: !Ref 'PrivateSubnet2BNetworkAcl'
+
   PrivateSubnet3BRouteTable:
     Condition: AdditionalPrivateSubnets&3AZCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 3B
+          Value: !Sub ${ManagedResourcePrefix}-Private subnet 3B
         - Key: Network
           Value: Private
+
   PrivateSubnet3BRoute:
     Condition: AdditionalPrivateSubnets&NATGateway&3AZCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet3BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway3', !Ref 'AWS::NoValue']
+
   PrivateSubnet3BRouteTableAssociation:
     Condition: AdditionalPrivateSubnets&3AZCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet3B'
       RouteTableId: !Ref 'PrivateSubnet3BRouteTable'
+
   PrivateSubnet3BNetworkAcl:
     Condition: AdditionalPrivateSubnets&3AZCondition
     Type: AWS::EC2::NetworkAcl
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: NACL Protected subnet 3
+          Value: !Sub ${ManagedResourcePrefix}-NACL Protected subnet 3
         - Key: Network
           Value: NACL Protected
+
   PrivateSubnet3BNetworkAclEntryInbound:
     Condition: AdditionalPrivateSubnets&3AZCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'false'
@@ -645,9 +743,11 @@ Resources:
       Protocol: '-1'
       RuleAction: allow
       RuleNumber: '100'
+
   PrivateSubnet3BNetworkAclEntryOutbound:
     Condition: AdditionalPrivateSubnets&3AZCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'true'
@@ -655,48 +755,60 @@ Resources:
       Protocol: '-1'
       RuleAction: allow
       RuleNumber: '100'
+
   PrivateSubnet3BNetworkAclAssociation:
     Condition: AdditionalPrivateSubnets&3AZCondition
     Type: AWS::EC2::SubnetNetworkAclAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet3B'
       NetworkAclId: !Ref 'PrivateSubnet3BNetworkAcl'
+
   PrivateSubnet4BRouteTable:
     Condition: AdditionalPrivateSubnets&4AZCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Private subnet 4B
+          Value: !Sub ${ManagedResourcePrefix}-Private subnet 4B
         - Key: Network
           Value: Private
+
   PrivateSubnet4BRoute:
     Condition: AdditionalPrivateSubnets&NATGateway&4AZCondition
     Type: AWS::EC2::Route
+    DeletionPolicy: Retain
     Properties:
       RouteTableId: !Ref 'PrivateSubnet4BRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway4', !Ref 'AWS::NoValue']
+
   PrivateSubnet4BRouteTableAssociation:
     Condition: AdditionalPrivateSubnets&4AZCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet4B'
       RouteTableId: !Ref 'PrivateSubnet4BRouteTable'
+
   PrivateSubnet4BNetworkAcl:
     Condition: AdditionalPrivateSubnets&4AZCondition
     Type: AWS::EC2::NetworkAcl
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: NACL Protected subnet 4
+          Value: !Sub ${ManagedResourcePrefix}-NACL Protected subnet 4
         - Key: Network
           Value: NACL Protected
+
   PrivateSubnet4BNetworkAclEntryInbound:
     Condition: AdditionalPrivateSubnets&4AZCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'false'
@@ -704,9 +816,11 @@ Resources:
       Protocol: '-1'
       RuleAction: allow
       RuleNumber: '100'
+
   PrivateSubnet4BNetworkAclEntryOutbound:
     Condition: AdditionalPrivateSubnets&4AZCondition
     Type: AWS::EC2::NetworkAclEntry
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 0.0.0.0/0
       Egress: 'true'
@@ -714,109 +828,141 @@ Resources:
       Protocol: '-1'
       RuleAction: allow
       RuleNumber: '100'
+
   PrivateSubnet4BNetworkAclAssociation:
     Condition: AdditionalPrivateSubnets&4AZCondition
     Type: AWS::EC2::SubnetNetworkAclAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PrivateSubnet4B'
       NetworkAclId: !Ref 'PrivateSubnet4BNetworkAcl'
+
   PublicSubnetRouteTable:
     Condition: PublicSubnetsCondition
     Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
     Properties:
       VpcId: !Ref 'VPC'
       Tags:
         - Key: Name
-          Value: Public Subnets
+          Value: !Sub ${ManagedResourcePrefix}-Public Subnets
         - Key: Network
           Value: Public
+
   PublicSubnetRoute:
     Condition: PublicSubnetsCondition
     DependsOn: VPCGatewayAttachment
+    DeletionPolicy: Retain
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref 'PublicSubnetRouteTable'
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref 'InternetGateway'
+
   PublicSubnet1RouteTableAssociation:
     Condition: PublicSubnetsCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PublicSubnet1'
       RouteTableId: !Ref 'PublicSubnetRouteTable'
+
   PublicSubnet2RouteTableAssociation:
     Condition: PublicSubnetsCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PublicSubnet2'
       RouteTableId: !Ref 'PublicSubnetRouteTable'
+
   PublicSubnet3RouteTableAssociation:
     Condition: 3AZPublicCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PublicSubnet3'
       RouteTableId: !Ref 'PublicSubnetRouteTable'
+
   PublicSubnet4RouteTableAssociation:
     Condition: 4AZPublicCondition
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DeletionPolicy: Retain
     Properties:
       SubnetId: !Ref 'PublicSubnet4'
       RouteTableId: !Ref 'PublicSubnetRouteTable'
+
   NAT1EIP:
     Condition: Public&PrivateSubnetsCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::EIP
+    DeletionPolicy: Retain
     Properties:
       Domain: vpc
+
   NAT2EIP:
     Condition: Public&PrivateSubnetsCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::EIP
+    DeletionPolicy: Retain
     Properties:
       Domain: vpc
+
   NAT3EIP:
     Condition: Public&PrivateSubnets&3AZCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::EIP
+    DeletionPolicy: Retain
     Properties:
       Domain: vpc
+
   NAT4EIP:
     Condition: Public&PrivateSubnets&4AZCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::EIP
+    DeletionPolicy: Retain
     Properties:
       Domain: vpc
+
   NATGateway1:
     Condition: NATGatewayCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::NatGateway
+    DeletionPolicy: Retain
     Properties:
       AllocationId: !GetAtt 'NAT1EIP.AllocationId'
       SubnetId: !Ref 'PublicSubnet1'
+
   NATGateway2:
     Condition: NATGatewayCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::NatGateway
+    DeletionPolicy: Retain
     Properties:
       AllocationId: !GetAtt 'NAT2EIP.AllocationId'
       SubnetId: !Ref 'PublicSubnet2'
+
   NATGateway3:
     Condition: NATGateway&3AZCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::NatGateway
+    DeletionPolicy: Retain
     Properties:
       AllocationId: !GetAtt 'NAT3EIP.AllocationId'
       SubnetId: !Ref 'PublicSubnet3'
+
   NATGateway4:
     Condition: NATGateway&4AZCondition
     DependsOn: VPCGatewayAttachment
     Type: AWS::EC2::NatGateway
+    DeletionPolicy: Retain
     Properties:
       AllocationId: !GetAtt 'NAT4EIP.AllocationId'
       SubnetId: !Ref 'PublicSubnet4'
+
   S3VPCEndpoint:
     Condition: S3VPCEndpointCondition
     Type: AWS::EC2::VPCEndpoint
+    DeletionPolicy: Retain
     Properties:
       PolicyDocument:
         Version: '2012-10-17'
@@ -840,12 +986,21 @@ Resources:
           !Ref 'AWS::NoValue']
       ServiceName: !Join ['', [com.amazonaws., !Ref 'AWS::Region', .s3]]
       VpcId: !Ref 'VPC'
+
   VPCFlowLogsLogGroup:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
     Properties:
       RetentionInDays: !Ref LogsRetentionInDays
+
   VPCFlowLogsRole:
     Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "Allow Resource * for CloudWatch Logs API since the resources are customer defined."
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -872,6 +1027,7 @@ Resources:
                 Resource: '*'
   VPCFlowLog:
     Type: AWS::EC2::FlowLog
+    DeletionPolicy: Retain
     Properties:
         DeliverLogsPermissionArn: !GetAtt 'VPCFlowLogsRole.Arn'
         LogGroupName: !Ref 'VPCFlowLogsLogGroup'
