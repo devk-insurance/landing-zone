@@ -99,7 +99,7 @@ organizational_units:
             parameter_file: parameters/core_accounts/aws-landing-zone-shared-services-vpc.json
             deploy_method: stack_set
             regions:
-              - us-east-1
+              - us-east-2
             ssm_parameters:
               - name: /org/member/sharedservices/vpc_region
                 value: $[output_VPCRegion]
@@ -138,6 +138,10 @@ organizational_units:
           - name: /org/primary/organization_id
             value: $[OrganizationId]
         core_resources: []
+  - name: applications
+    include_in_baseline_products:
+      - AWS-Landing-Zone-Account-Vending-Machine
+
 # Landing Zone Service Control Policies
 organization_policies:
   - name: protect-cloudtrail-config
@@ -146,6 +150,8 @@ organization_policies:
     #Apply to accounts in the following OU(s)
     apply_to_accounts_in_ou:
       - core
+      - applications
+
 # Landing Zone Service Catalog portolfios/products (Optional/Baseline)
 portfolios:
   - name: AWS Landing Zone - Baseline
@@ -166,6 +172,8 @@ portfolios:
         # Do you wish to auto-apply this baseline to accounts everytime a new version of AVM product is created by pipeline?
         apply_baseline_to_accounts_in_ou:
           - core
+          - applications
+
         launch_constraint_role: $[alfred_ssm_/org/primary/service_catalog/constraint/role_arn]
 
 # Landing Zone Service Baseline Resources

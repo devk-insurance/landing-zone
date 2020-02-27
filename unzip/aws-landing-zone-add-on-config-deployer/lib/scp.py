@@ -122,11 +122,15 @@ class ServiceControlPolicy(object):
                 PolicyId=policy_id,
                 TargetId=account_id
             )
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'DuplicatePolicyAttachmentException':
+                self.logger.exception("Caught exception 'DuplicatePolicyAttachmentException', taking no action...")
+                return
+            else:
+                message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                           'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                self.logger.exception(message)
+                raise
 
     def detach_policy(self, policy_id, account_id):
         try:
@@ -134,6 +138,16 @@ class ServiceControlPolicy(object):
                 PolicyId=policy_id,
                 TargetId=account_id
             )
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'PolicyNotAttachedException':
+                self.logger.exception("Caught exception 'PolicyNotAttachedException', taking no action...")
+                return
+            else:
+                message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                           'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                self.logger.exception(message)
+                raise
+
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}

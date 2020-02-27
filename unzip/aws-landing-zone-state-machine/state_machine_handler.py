@@ -32,6 +32,7 @@ import time
 import os
 import json
 from lib.helper import sanitize
+import random
 
 
 class CloudFormation(object):
@@ -83,7 +84,8 @@ class CloudFormation(object):
         try:
             self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
             self.logger.info(self.params)
-            # Check if stack instance was created
+            self.event.update({'RetryDeleteFlag': False})
+
             stack_set = StackSet(self.logger)
             response = stack_set.describe_stack_set_operation(self.params.get('StackSetName'),
                                                               self.event.get('OperationId'))
@@ -95,8 +97,22 @@ class CloudFormation(object):
                 if account_id:
                     for region in self.params.get('RegionList'):
                         self.logger.info("Account: {} - describing stack instance in {} region".format(account_id, region))
-                        resp = stack_set.describe_stack_instance(self.params.get('StackSetName'), account_id, region)
-                        self.event.update({region: resp.get('StackInstance', {}).get('StatusReason')})
+                        try:
+                            resp = stack_set.describe_stack_instance(self.params.get('StackSetName'), account_id, region)
+                            self.event.update({region: resp.get('StackInstance', {}).get('StatusReason')})
+                        except ClientError as e:
+                            # When CFN has triggered StackInstance delete and the SCP is still attached (due to race condition), then it fails to delete the stack
+                            # and StackSet throws the StackInstanceNotFoundException exception back, the CFN stack in target account ends up with 'DELETE_FAILED' state
+                            # so it should try again
+                            if e.response['Error']['Code'] == 'StackInstanceNotFoundException' and self.event.get('RequestType') == 'Delete':
+                                self.logger.exception("Caught exception 'StackInstanceNotFoundException', sending the flag to go back to Delete Stack Instances stage...")
+                                self.event.update({'RetryDeleteFlag': True})
+                            else:
+                                message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                                           'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                                self.logger.exception(message)
+                                raise
+
 
             operation_status = response.get('StackSetOperation', {}).get('Status')
             self.event.update({'OperationStatus': operation_status})
@@ -108,7 +124,25 @@ class CloudFormation(object):
                 for account, policy_id_list in account_to_policies_map.items():
                     for policy_id in policy_id_list:
                         self.logger.info("Attaching policy:{} to account: {}".format(policy_id, account))
-                        scp.attach_policy(policy_id, account)
+
+                        for count in range(3):
+                            try:
+                                scp.attach_policy(policy_id, account)
+                                break
+                            except ClientError as e:
+                                if e.response['Error']['Code'] == 'ConcurrentModificationException':
+                                    if count > 2:
+                                        raise
+                                    else:
+                                        self.logger.exception("Caught exception 'ConcurrentModificationException', retrying...")
+                                        i = random.randrange(1,10)
+                                        time.sleep(i)
+                                        continue
+                                else:
+                                    message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                                               'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                                    self.logger.exception(message)
+                                    raise
 
             return self.event
         except Exception as e:
@@ -167,8 +201,16 @@ class CloudFormation(object):
             self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
             self.logger.info(self.params)
 
+            if 'ParameterOverrides' in self.params.keys():
+                self.logger.info("Override parameters found in the event")
+                self.event.update({'OverrideParametersExist': 'yes'})
+            else:
+                self.logger.info("Override parameters NOT found in the event")
+                self.event.update({'OverrideParametersExist': 'no'})
+
             # Check if stack instances exist
             stack_set = StackSet(self.logger)
+            # if account list is not present then only create StackSet and skip stack instance creation
             if type(self.params.get('AccountList')) is not list:
                 self.event.update({'InstanceExist': 'no'})
                 self.event.update({'NextToken': 'Complete'})
@@ -193,8 +235,8 @@ class CloudFormation(object):
                 if response is not None:
                     if not response.get('Summaries'):  # 'True' if list is empty
                         self.event.update({'InstanceExist': 'no'})
-                        self.event.update({'NextToken': 'Complete'})
-                        self.event.update({'CreateInstance': 'yes'})
+                        self.event.update({'NextToken': 'Complete'}) # exit loop
+                        self.event.update({'CreateInstance': 'yes'}) # create stack instance
                         self.logger.info("No existing stack instances found. (Summaries List: Empty)")
                         return self.event
                     else:
@@ -208,8 +250,9 @@ class CloudFormation(object):
                             'ExistingRegionList')
                         for instance in response.get('Summaries'):
                             if instance.get('Region') not in existing_region_list:
-                                self.logger.info(
-                                    "Region not in the region list. Adding {}...".format(instance.get('Region')))
+                                self.logger.info("Region {} not in the region list. Adding it..."
+                                                 .format(instance.get('Region')))
+                                # appending to the list
                                 existing_region_list.append(instance.get('Region'))
                             else:
                                 self.logger.info("Already in the region list. Skipping...")
@@ -353,11 +396,39 @@ class CloudFormation(object):
                                                   self.params.get('TemplateURL'),
                                                   self.params.get('Capabilities'))
 
-            self.logger.info("Response Update Stack Instances")
+            self.logger.info("Response Update Stack Set")
             self.logger.info(response)
             self.logger.info("Operation ID: {}".format(response.get('OperationId')))
             self.event.update({'OperationId': response.get('OperationId')})
             return self.event
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            gf = GeneralFunctions(self.event, self.logger)
+            gf.send_failure_to_cfn()
+            raise
+
+    def update_stack_instances(self):
+        try:
+            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
+            self.logger.info(self.params)
+
+            stack_set = StackSet(self.logger)
+            override_parameters = self.params.get('ParameterOverrides') # this should come from the event
+            self.logger.info("override_params_list={}".format(override_parameters))
+            self._detach_scp()
+
+            response = stack_set.update_stack_instances(self.params.get('StackSetName'),
+                                                        self.params.get('AccountList'),
+                                                        self.params.get('RegionList'),
+                                                        override_parameters)
+            self.logger.info("Update Stack Instance Response")
+            self.logger.info(response)
+            self.logger.info("Operation ID: {}".format(response.get('OperationId')))
+            self.event.update({'OperationId': response.get('OperationId')})
+            return self.event
+
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
@@ -443,8 +514,26 @@ class CloudFormation(object):
                     # Special allowance for FullAWSAccess SCP policy, if you detach that you can't do anything in the account :(
                     if 'fullawsaccess' not in policy_name.lower():
                         self.logger.info("Detaching SCP policy:{} from account: {}".format(policy_id, account))
-                        scp.detach_policy(policy_id, account)
-                        policy_id_list.append(policy_id)
+
+                        for count in range(3):
+                            try:
+                                scp.detach_policy(policy_id, account)
+                                policy_id_list.append(policy_id)
+                                break
+                            except ClientError as e:
+                                if e.response['Error']['Code'] == 'ConcurrentModificationException':
+                                    if count > 2:
+                                        raise
+                                    else:
+                                        self.logger.exception("Caught exception 'ConcurrentModificationException', retrying...")
+                                        i = random.randrange(1,10)
+                                        time.sleep(i)
+                                        continue
+                                else:
+                                    message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                                               'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+                                    self.logger.exception(message)
+                                    raise
 
             account_to_policies_map.update({account: policy_id_list})
 
@@ -1703,6 +1792,27 @@ class ServiceCatalog(object):
             gf.send_failure_to_cfn()
             raise
 
+    def _provisioned_products_status(self, sc, pp_id):
+        try:
+            # Descrive Provisioned Product - send status & message to SM output
+            pp_desc_resp = sc.describe_provisioned_product(pp_id)
+            self.logger.info('Descrive Provisioned Product Response')
+            self.logger.info(pp_desc_resp)
+            provisioned_product_detail = pp_desc_resp.get('ProvisionedProductDetail', {})
+            details = {'ProvisionedProductName': provisioned_product_detail.get('Name'),
+                      'ProvisionedProductID': provisioned_product_detail.get('Id'),
+                      'ProvisionedProductStatus': provisioned_product_detail.get('Status'),
+                      'ProvisionedProductStatusMessage': provisioned_product_detail.get('StatusMessage')
+                      }
+            return details
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            gf = GeneralFunctions(self.event, self.logger)
+            gf.send_failure_to_cfn()
+            raise
+
     def describe_record(self):
         try:
             self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
@@ -1717,6 +1827,20 @@ class ServiceCatalog(object):
             self.logger.info(response)
             status = response.get('RecordDetail', {}).get('Status')
             self.event.update({'ProvisioningStatus': status})
+            provisioned_product_id = response.get('RecordDetail', {}).get('ProvisionedProductId')
+            key = 'ProvisionedProductStatus-' + provisioned_product_id
+            if status != 'SUCCEEDED':
+                product_details = self._provisioned_products_status(sc, provisioned_product_id)
+                self.event.update({key: product_details})
+            else:
+                detail_value = self.event.get(key)
+                if self.event.get('RequestType') == 'Delete':
+                    status = 'DELETED'
+                    detail_value.update({'ProvisionedProductStatus': status})
+                    self.event.update({key: detail_value})
+                else:
+                    product_details = self._provisioned_products_status(sc, provisioned_product_id)
+                    self.event.update({key: product_details})
             return self.event
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
@@ -1741,7 +1865,6 @@ class ServiceCatalog(object):
             if next_token is None:
                 next_token = '0'
 
-            #TODO If PRODUCT ID is NONE then dont make this API call.
             response = sc.search_provisioned_products(product_id, next_token)
 
             self.logger.info("Search Provisioned Products Response")

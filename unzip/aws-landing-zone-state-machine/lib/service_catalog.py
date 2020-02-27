@@ -385,6 +385,42 @@ class ServiceCatalog(object):
             self.logger.exception(message)
             raise
 
+    def describe_provisioned_product(self, pp_id):
+        '''
+        :param pp_id:
+        :return:
+        {
+            'ProvisionedProductDetail': {
+                'Name': 'string',
+                'Arn': 'string',
+                'Type': 'string',
+                'Id': 'string',
+                'Status': 'AVAILABLE'|'UNDER_CHANGE'|'TAINTED'|'ERROR'|'PLAN_IN_PROGRESS',
+                'StatusMessage': 'string',
+                'CreatedTime': datetime(2015, 1, 1),
+                'IdempotencyToken': 'string',
+                'LastRecordId': 'string',
+                'ProductId': 'string',
+                'ProvisioningArtifactId': 'string'
+            },
+            'CloudWatchDashboards': [
+                {
+                    'Name': 'string'
+                },
+            ]
+        }
+        '''
+        try:
+            response = sc_client.describe_provisioned_product(
+                Id=pp_id
+            )
+            return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
     def search_provisioned_products(self, product_id, next_token='0'):
         try:
             search_query = "productId:{}".format(product_id)

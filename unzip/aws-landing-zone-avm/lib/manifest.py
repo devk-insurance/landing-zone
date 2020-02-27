@@ -105,6 +105,7 @@ class OUList(List):
 @yorm.attr(description=String)
 @yorm.attr(template_file=String)
 @yorm.attr(skeleton_file=String)
+@yorm.attr(rules_file=String)
 @yorm.attr(parameter_file=String)
 @yorm.attr(ssm_parameters=SSMList)
 @yorm.attr(hide_old_versions=Boolean)
@@ -112,12 +113,13 @@ class OUList(List):
 @yorm.attr(launch_constraint_role=String)
 @yorm.attr(product_type=String)
 class Product(AttributeDictionary):
-    def __init__(self, name, description, template_file, skeleton_file, parameter_file, hide_old_versions, apply_baseline_to_accounts_in_ou, launch_constraint_role, product_type, ssm_parameters):
+    def __init__(self, name, description, template_file, skeleton_file, rules_file, parameter_file, hide_old_versions, apply_baseline_to_accounts_in_ou, launch_constraint_role, product_type, ssm_parameters):
         super().__init__()
         self.name = name
         self.description = description
         self.template_file = template_file
         self.skeleton_file = skeleton_file
+        self.rules_file = rules_file
         self.parameter_file = parameter_file
         self.ssm_parameters = []
         self.hide_old_versions = hide_old_versions

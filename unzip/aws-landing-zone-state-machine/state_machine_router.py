@@ -40,6 +40,8 @@ def cloudformation(event, function_name):
         response = stack_set.create_stack_instances()
     elif function_name == 'update_stack_set':
         response = stack_set.update_stack_set()
+    elif function_name == 'update_stack_instances':
+        response = stack_set.update_stack_instances()
     elif function_name == 'delete_stack_set':
         response = stack_set.delete_stack_set()
     elif function_name == 'delete_stack_instances':

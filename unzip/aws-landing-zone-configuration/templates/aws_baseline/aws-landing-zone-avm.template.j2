@@ -103,13 +103,24 @@ Metadata:
 Mappings:
   OUToSCPMap:
     {%- for ou in manifest.organizational_units %}
-    {{ ou.name }}:
-        SCP:
+        {%- set include_ou = { 'flag': False } %}
         {%- for policy in manifest.organization_policies %}
             {%- if ou.name in policy.apply_to_accounts_in_ou %}
-            - {{ policy.name }}
+              {%-   if include_ou.update({'flag':True}) %}{%- endif %}
             {%- endif %}
         {%- endfor %}
+        {%- if include_ou.flag %}
+        {{ ou.name }}:
+            SCP:
+            {%- for policy in manifest.organization_policies %}
+                {%- if ou.name in policy.apply_to_accounts_in_ou %}
+                - {{ policy.name }}
+                {%- endif %}
+            {%- endfor %}
+        {%- else %}
+        {{ ou.name }}:
+            SCP: []
+        {%- endif %}
     {%- endfor %}
   VPC:
     Public-Only-2-AZ:
@@ -315,6 +326,7 @@ Resources:
       PolicyList: !FindInMap [OUToSCPMap, !Ref OrgUnitName, SCP]
       Operation: Detach
       ServiceToken: {{ lambda_arn }}
+      key: {{ uuid }}
 
 #
 # Cloudformation StackSets Custom Resource
@@ -393,6 +405,7 @@ Resources:
     DependsOn:
       - Organizations
       - DetachSCP
+      - ExpungeVPC
         {%- for resource in manifest.baseline_resources %}
           {%- if manifest.portfolios[portfolio_index].products[product_index].name in resource.baseline_products %}
             {%- if resource.name != 'PrimaryVPC' %}
@@ -405,6 +418,7 @@ Resources:
       PolicyList: !FindInMap [OUToSCPMap, !Ref OrgUnitName, SCP]
       Operation: Attach
       ServiceToken: {{ lambda_arn }}
+      key: {{ uuid }}
 
 #
 # VPC Custom Resource - Subnet and AZ Calculator

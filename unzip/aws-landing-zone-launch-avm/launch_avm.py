@@ -95,18 +95,22 @@ class LaunchAVM(object):
                             self.logger.debug("List Accounts for Parent Response")
                             self.logger.debug(response)
                             for account in response.get('Accounts'):
-                                params = _params.copy()
-                                for key, value in params.items():
-                                    if value.lower() == 'accountemail':
-                                        params.update({key: account.get('Email')})
-                                    elif value.lower() == 'accountname':
-                                        params.update({key: account.get('Name')})
-                                    elif value.lower() == 'orgunitname':
-                                        params.update({key: ou})
+                                if account.get('Status').upper() == 'SUSPENDED':
+                                    org.move_account(account.get('Id'), ou_id, root_id)
+                                    continue
+                                else:
+                                    params = _params.copy()
+                                    for key, value in params.items():
+                                        if value.lower() == 'accountemail':
+                                            params.update({key: account.get('Email')})
+                                        elif value.lower() == 'accountname':
+                                            params.update({key: account.get('Name')})
+                                        elif value.lower() == 'orgunitname':
+                                            params.update({key: ou})
 
-                                self.logger.info("Input parameters format for Account: {} are {}".format(account.get('Name'), params))
+                                    self.logger.info("Input parameters format for Account: {} are {}".format(account.get('Name'), params))
 
-                                list_of_accounts.append(params)
+                                    list_of_accounts.append(params)
 
                         if len(list_of_accounts) > 0:
                             sm_input = self._create_launch_avm_state_machine_input_map(portfolio.name, product.name,list_of_accounts)
@@ -149,19 +153,18 @@ class LaunchAVM(object):
                         final_status = 'COMPLETED'
 
             err_flag = False
+            failed_sm_execution_list = []
             for sm_exec_arn in self.list_sm_exec_arns:
                 status = self.state_machine.check_state_machine_status(sm_exec_arn)
                 if status == 'SUCCEEDED':
                     continue
                 else:
-                    err_msg = "State Machine Execution Failed, please check the Step function console for State Machine Execution ARN: {}".format(
-                        sm_exec_arn)
-                    self.logger.error(err_msg)
+                    failed_sm_execution_list.append(sm_exec_arn)
                     err_flag = True
                     continue
 
             if err_flag:
-                return 'FAILED', err_msg
+                return 'FAILED', failed_sm_execution_list
             else:
                 return 'SUCCEEDED', ''
 
@@ -180,10 +183,14 @@ if __name__ == '__main__':
         logger = Logger(loglevel=log_level)
         avm_run = LaunchAVM(logger, wait_time, manifest_file_path, sm_arn_launch_avm)
         avm_run.trigger_launch_avm_state_machine()
-        status, message = avm_run.monitor_state_machines_execution_status()
+        status, failed_execution_list = avm_run.monitor_state_machines_execution_status()
+        error = " LaunchAVM State Machine Execution(s) Failed. Navigate to the AWS Step Functions console and" \
+                " review the following State Machine Executions. ARN List: {}".format(failed_execution_list)
 
         if status == 'FAILED':
-            logger.error(message)
+            logger.error(100 * '*')
+            logger.error(error)
+            logger.error(100 * '*')
             sys.exit(1)
 
     else:

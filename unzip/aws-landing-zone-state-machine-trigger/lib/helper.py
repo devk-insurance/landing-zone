@@ -37,3 +37,48 @@ def get_available_regions(service_name):
     """
     session = boto3.session.Session()
     return session.get_available_regions(service_name)
+
+def transform_params(params_in):
+    """
+    Args:
+        params_in (dict): Python dict of input params e.g.
+        {
+            "principal_role": "$[alfred_ssm_/org/primary/service_catalog/principal/role_arn]"
+        }
+
+    Return:
+        params_out (list): Python list of output params e.g.
+        {
+            "ParameterKey": "principal_role",
+            "ParameterValue": "$[alfred_ssm_/org/primary/service_catalog/principal/role_arn]"
+        }
+    """
+    params_list = []
+    for key, value in params_in.items():
+        param = {}
+        param.update({"ParameterKey": key})
+        param.update({"ParameterValue": value})
+        params_list.append(param)
+    return params_list
+
+def reverse_transform_params(params_in):
+    """
+    Args:
+        params_in (list): Python list of output params e.g.
+        {
+            "ParameterKey": "principal_role",
+            "ParameterValue": "$[alfred_ssm_/org/primary/service_catalog/principal/role_arn]"
+        }
+    Return:
+        params_out (dict): Python dict of input params e.g.
+        {
+            "principal_role": "$[alfred_ssm_/org/primary/service_catalog/principal/role_arn]"
+        }
+    """
+    params_out = {}
+    for param in params_in:
+        key = param.get("ParameterKey")
+        value = param.get("ParameterValue")
+        params_out.update({key: value})
+    return params_out
+

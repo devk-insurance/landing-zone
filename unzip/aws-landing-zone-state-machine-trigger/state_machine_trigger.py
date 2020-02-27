@@ -9,7 +9,8 @@ from os import environ
 from lib.organizations import Organizations
 from lib.manifest import Manifest
 from lib.params import ParamsHandler
-from lib.helper import sanitize
+from lib.helper import sanitize, transform_params, reverse_transform_params
+from lib.cloudformation import StackSet
 import inspect
 import os
 import json
@@ -20,6 +21,7 @@ import jinja2
 import uuid
 import shutil
 import errno
+import filecmp
 
 log_level = os.environ['log_level']
 wait_time = os.environ['wait_time']
@@ -50,29 +52,6 @@ class StateMachineTriggerLambda(object):
             self.isSequential = False
         self.index = 100
         self.primary_account_id = primary_account_id
-
-    def _transform_params(self, params_in):
-        """
-        Args:
-            params_in (dict): Python dict of input params e.g.
-            {
-                "principal_role": "$[alfred_ssm_/org/primary/service_catalog/principal/role_arn]"
-            }
-
-        Return:
-            params_out (list): Python list of output params e.g.
-            {
-                "ParameterKey": "principal_role",
-                "ParameterValue": "$[alfred_ssm_/org/primary/service_catalog/principal/role_arn]"
-            }
-        """
-        params_list = []
-        for key, value in params_in.items():
-            param = {}
-            param.update({"ParameterKey": key})
-            param.update({"ParameterValue": value})
-            params_list.append(param)
-        return params_list
 
     def _save_sm_exec_arn(self, list_sm_exec_arns):
         if list_sm_exec_arns is not None and type(list_sm_exec_arns) is list:
@@ -136,8 +115,13 @@ class StateMachineTriggerLambda(object):
             parameter_file_content = content_file.read()
 
         params = json.loads(parameter_file_content)
-        # The last parameter is set to False, because we do not want to replace the SSM parameter values yet.
-        sm_params = self.param_handler.update_params(params, account, region, False)
+        if account is not None:
+            #Deploying Core resource Stack Set
+            # The last parameter is set to False, because we do not want to replace the SSM parameter values yet.
+            sm_params = self.param_handler.update_params(params, account, region, False)
+        else:
+            # Deploying Baseline resource Stack Set
+            sm_params = self.param_handler.update_params(params)
 
         logger.info("Input Parameters for State Machine: {}".format(sm_params))
         return sm_params
@@ -164,7 +148,7 @@ class StateMachineTriggerLambda(object):
         params = sm_input.get('ResourceProperties').get('Parameters', {})
         # First transform it from {name: value} to [{'ParameterKey': name}, {'ParameterValue': value}]
         # then replace the SSM parameter names with its values
-        sm_params = self.param_handler.update_params(self._transform_params(params))
+        sm_params = self.param_handler.update_params(transform_params(params))
         # Put it back into the sm_input
         sm_input.get('ResourceProperties').update({'Parameters': sm_params})
         logger.debug("Done populating SSM parameter values for SM input: {}".format(sm_input))
@@ -176,7 +160,7 @@ class StateMachineTriggerLambda(object):
         for ssm_parameter in ssm_parameters:
             key = ssm_parameter.name
             value = ssm_parameter.value
-            ssm_value = self.param_handler.update_params(self._transform_params({key:value}))
+            ssm_value = self.param_handler.update_params(transform_params({key:value}))
             ssm_input_map.update(ssm_value)
 
         return ssm_input_map
@@ -238,7 +222,7 @@ class StateMachineTriggerLambda(object):
         sc_portfolio.update({'PortfolioName': sanitize(portfolio.name, True)})
         sc_portfolio.update({'PortfolioDescription': sanitize(portfolio.description, True)})
         sc_portfolio.update({'PortfolioProvider': sanitize(portfolio.owner, True)})
-        ssm_value = self.param_handler.update_params(self._transform_params({'principal_role': portfolio.principal_role}))
+        ssm_value = self.param_handler.update_params(transform_params({'principal_role': portfolio.principal_role}))
         sc_portfolio.update({'PrincipalArn': ssm_value.get('principal_role')})
 
         sc_product = {}
@@ -249,7 +233,7 @@ class StateMachineTriggerLambda(object):
             sc_product.update({'HideOldVersions': 'Yes'})
         else:
             sc_product.update({'HideOldVersions': 'No'})
-        ssm_value = self.param_handler.update_params(self._transform_params({'launch_constraint_role': product.launch_constraint_role}))
+        ssm_value = self.param_handler.update_params(transform_params({'launch_constraint_role': product.launch_constraint_role}))
         sc_product.update({'RoleArn':ssm_value.get('launch_constraint_role')})
 
         ec2 = EC2(self.logger, environ.get('AWS_REGION'))
@@ -343,6 +327,7 @@ class StateMachineTriggerLambda(object):
     def _deploy_resource(self, resource, sm_arn, list_sm_exec_arns, account_id = None):
         template_full_path = self._stage_template(resource.template_file)
         params = {}
+        deploy_resource_flag = True
         if resource.parameter_file:
             if len(resource.regions) > 0:
                 params = self._load_params(resource.parameter_file, account_id, resource.regions[0])
@@ -360,7 +345,41 @@ class StateMachineTriggerLambda(object):
             stack_name = "AWS-Landing-Zone-Baseline-{}".format(resource.name)
             sm_input = self._create_stack_set_state_machine_input_map(stack_name, template_full_path, params, [], [], ssm_map)
 
-        self._run_or_queue_state_machine(sm_input, sm_arn, list_sm_exec_arns, stack_name)
+            stack_set = StackSet(self.logger)
+            response = stack_set.describe_stack_set(stack_name)
+            if response is not None:
+                self.logger.info("Found existing stack set.")
+                self.logger.info("Comparing the template of the StackSet: {} with local copy of template".format(stack_name))
+                relative_template_path = resource.template_file
+                if relative_template_path.lower().startswith('s3'):
+                    local_template_file = self._download_remote_file(relative_template_path)
+                else:
+                    local_template_file = os.path.join(self.manifest_folder, relative_template_path)
+
+                cfn_template_file = tempfile.mkstemp()[1]
+                with open(cfn_template_file, "w") as f:
+                    f.write(response.get('StackSet').get('TemplateBody'))
+
+                template_compare = filecmp.cmp(local_template_file, cfn_template_file)
+                self.logger.info("Comparing the parameters of the StackSet: {} with local copy of JSON parameters file".format(stack_name))
+                params_compare = True
+                if template_compare:
+                    cfn_params = reverse_transform_params(response.get('StackSet').get('Parameters'))
+                    for key, value in params.items():
+                        if cfn_params.get(key, '') == value:
+                            pass
+                        else:
+                            params_compare = False
+                            break
+
+                self.logger.info("template_compare={}".format(template_compare))
+                self.logger.info("params_compare={}".format(params_compare))
+                if template_compare and params_compare:
+                    deploy_resource_flag = False
+                    self.logger.info("Found no changes in template & parameters, so skipping Update StackSet for {}".format(stack_name))
+
+        if deploy_resource_flag:
+            self._run_or_queue_state_machine(sm_input, sm_arn, list_sm_exec_arns, stack_name)
 
     def start_core_account_sm(self, sm_arn_account):
         try:
