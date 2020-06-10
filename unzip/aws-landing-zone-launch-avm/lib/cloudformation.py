@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -15,19 +15,35 @@
 
 import boto3
 import inspect
+from os import environ
 from botocore.exceptions import ClientError
+from botocore.config import Config
 from lib.decorator import try_except_retry
-
-cfn_client = boto3.client('cloudformation')
 
 
 class StackSet(object):
-    def __init__(self, logger):
+    cfn_client = None
+    logger = None
+
+    def __init__(self, logger, client=None):
         self.logger = logger
+
+        self.max_concurrent_percent = int(environ.get('MAX_CONCURRENT_PERCENT', 100))
+        self.failed_tolerance_percent = int(environ.get('FAILED_TOLERANCE_PERCENT', 10))
+        retries = Config(
+            retries = {
+                'max_attempts' : 4
+            }
+        )
+        if client == None:  
+            self.cfn_client = boto3.client('cloudformation',config=retries)
+        else:
+            self.cfn_client = client
+
 
     def describe_stack_set(self, stack_set_name):
         try:
-            response = cfn_client.describe_stack_set(
+            response = self.cfn_client.describe_stack_set(
                 StackSetName=stack_set_name
             )
             return response
@@ -36,7 +52,7 @@ class StackSet(object):
 
     def describe_stack_set_operation(self, stack_set_name, operation_id):
         try:
-            response = cfn_client.describe_stack_set_operation(
+            response = self.cfn_client.describe_stack_set_operation(
                 StackSetName=stack_set_name,
                 OperationId=operation_id
             )
@@ -48,9 +64,39 @@ class StackSet(object):
             self.logger.exception(message)
             raise
 
+    @try_except_retry()
+    def list_stack_instances_per_account(self, stack_name, account_id, max_results=20):
+        try:
+            response = self.cfn_client.list_stack_instances(
+                StackSetName=stack_name,
+                StackInstanceAccount=account_id,
+                MaxResults=max_results
+            )
+            stack_instance_list = response.get('Summaries', [])
+            next_token = response.get('NextToken', None)
+
+            while next_token is not None:
+                self.logger.info("Next Token Returned: {}".format(next_token))
+                self.cfn_client.list_stack_instances(
+                    StackSetName=stack_name,
+                    StackInstanceAccount=account_id,
+                    MaxResults=max_results,
+                    NextToken=next_token
+                )
+                self.logger.info("Extending Stack Instance List")
+                stack_instance_list.extend(response.get('Summaries', []))
+                next_token = response.get('NextToken', None)
+            return stack_instance_list
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    @try_except_retry()
     def list_stack_instances(self, **kwargs):
         try:
-            response = cfn_client.list_stack_instances(**kwargs)
+            response = self.cfn_client.list_stack_instances(**kwargs)
             return response
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
@@ -74,7 +120,7 @@ class StackSet(object):
                 d['ParameterValue'] = value
                 parameters.append(d.copy())
 
-            response = cfn_client.create_stack_set(
+            response = self.cfn_client.create_stack_set(
                 StackSetName=stack_set_name,
                 TemplateURL=template_url,
                 Parameters=parameters,
@@ -93,16 +139,15 @@ class StackSet(object):
             self.logger.exception(message)
             raise
 
-    def create_stack_instances(self, stack_set_name, account_list, region_list,
-                               failed_tolerance_percent=50, max_concurrent_percent=100):
+    def create_stack_instances(self, stack_set_name, account_list, region_list):
         try:
-            response = cfn_client.create_stack_instances(
+            response = self.cfn_client.create_stack_instances(
                 StackSetName=stack_set_name,
                 Accounts=account_list,
                 Regions=region_list,
                 OperationPreferences={
-                    'FailureTolerancePercentage': failed_tolerance_percent,
-                    'MaxConcurrentPercentage': max_concurrent_percent
+                    'FailureTolerancePercentage': self.failed_tolerance_percent,
+                    'MaxConcurrentPercentage': self.max_concurrent_percent
                 }
             )
             return response
@@ -116,8 +161,7 @@ class StackSet(object):
                 self.logger.exception(message)
                 raise
 
-    def create_stack_instances_with_override_params(self, stack_set_name, account_list, region_list, override_params,
-                               failed_tolerance_percent=50, max_concurrent_percent=100):
+    def create_stack_instances_with_override_params(self, stack_set_name, account_list, region_list, override_params):
         try:
             parameters = []
             d = {}
@@ -133,14 +177,14 @@ class StackSet(object):
                 d['ParameterValue'] = value
                 parameters.append(d.copy())
 
-            response = cfn_client.create_stack_instances(
+            response = self.cfn_client.create_stack_instances(
                 StackSetName=stack_set_name,
                 Accounts=account_list,
                 Regions=region_list,
                 ParameterOverrides=parameters,
                 OperationPreferences={
-                    'FailureTolerancePercentage': failed_tolerance_percent,
-                    'MaxConcurrentPercentage': max_concurrent_percent
+                    'FailureTolerancePercentage': self.failed_tolerance_percent,
+                    'MaxConcurrentPercentage': self.max_concurrent_percent
                 }
             )
             return response
@@ -154,8 +198,7 @@ class StackSet(object):
                 self.logger.exception(message)
                 raise
 
-    def update_stack_instances(self, stack_set_name, account_list, region_list, override_params,
-                               failed_tolerance_percent=50, max_concurrent_percent=100):
+    def update_stack_instances(self, stack_set_name, account_list, region_list, override_params):
         try:
             parameters = []
             d = {}
@@ -171,14 +214,14 @@ class StackSet(object):
                 d['ParameterValue'] = value
                 parameters.append(d.copy())
 
-            response = cfn_client.update_stack_instances(
+            response = self.cfn_client.update_stack_instances(
                 StackSetName=stack_set_name,
                 Accounts=account_list,
                 Regions=region_list,
                 ParameterOverrides=parameters,
                 OperationPreferences={
-                    'FailureTolerancePercentage': failed_tolerance_percent,
-                    'MaxConcurrentPercentage': max_concurrent_percent
+                    'FailureTolerancePercentage': self.failed_tolerance_percent,
+                    'MaxConcurrentPercentage': self.max_concurrent_percent
                 }
             )
             return response
@@ -192,8 +235,7 @@ class StackSet(object):
                 self.logger.exception(message)
                 raise
 
-    def update_stack_set(self, stack_set_name, parameter, template_url, capabilities, failed_tolerance_percent=50,
-                         max_concurrent_percent=100):
+    def update_stack_set(self, stack_set_name, parameter, template_url, capabilities):
         try:
             parameters = []
             d = {}
@@ -209,14 +251,14 @@ class StackSet(object):
                 d['ParameterValue'] = value
                 parameters.append(d.copy())
 
-            response = cfn_client.update_stack_set(
+            response = self.cfn_client.update_stack_set(
                 StackSetName=stack_set_name,
                 TemplateURL=template_url,
                 Parameters=parameters,
                 Capabilities=[capabilities],
                 OperationPreferences={
-                    'FailureTolerancePercentage': failed_tolerance_percent,
-                    'MaxConcurrentPercentage': max_concurrent_percent
+                    'FailureTolerancePercentage': self.failed_tolerance_percent,
+                    'MaxConcurrentPercentage': self.max_concurrent_percent
                 }
             )
             return response
@@ -232,7 +274,7 @@ class StackSet(object):
 
     def delete_stack_set(self, stack_set_name):
         try:
-            response = cfn_client.delete_stack_set(
+            response = self.cfn_client.delete_stack_set(
                 StackSetName=stack_set_name,
             )
             return response
@@ -242,17 +284,16 @@ class StackSet(object):
             self.logger.exception(message)
             raise
 
-    def delete_stack_instances(self, stack_set_name, account_list, region_list, retain_condition=False,
-                               failed_tolerance_percent=50, max_concurrent_percent=100):
+    def delete_stack_instances(self, stack_set_name, account_list, region_list, retain_condition=False):
         try:
-            response = cfn_client.delete_stack_instances(
+            response = self.cfn_client.delete_stack_instances(
                 StackSetName=stack_set_name,
                 Accounts=account_list,
                 Regions=region_list,
                 RetainStacks=retain_condition,
                 OperationPreferences={
-                    'FailureTolerancePercentage': failed_tolerance_percent,
-                    'MaxConcurrentPercentage': max_concurrent_percent
+                    'FailureTolerancePercentage': self.failed_tolerance_percent,
+                    'MaxConcurrentPercentage': self.max_concurrent_percent
                 }
             )
             return response
@@ -268,7 +309,7 @@ class StackSet(object):
 
     def describe_stack_instance(self, stack_set_name, account_id, region):
         try:
-            response = cfn_client.describe_stack_instance(
+            response = self.cfn_client.describe_stack_instance(
                 StackSetName=stack_set_name,
                 StackInstanceAccount=account_id,
                 StackInstanceRegion=region
@@ -282,7 +323,7 @@ class StackSet(object):
 
     def list_stack_set_operations(self, **kwargs):
         try:
-            response = cfn_client.list_stack_set_operations(**kwargs)
+            response = self.cfn_client.list_stack_set_operations(**kwargs)
             return response
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
@@ -291,12 +332,21 @@ class StackSet(object):
             raise
 
 class Stacks(object):
+    cfn_client = None
+    logger = None
+
     def __init__(self, logger, **kwargs):
         self.logger = logger
+        retries = Config(
+            retries = {
+                'max_attempts' : 4
+            }
+        )
+
         if kwargs is not None:
             if kwargs.get('credentials') is None:
                 logger.debug("Setting up CFN BOTO3 Client with default credentials")
-                self.cfn_client = boto3.client('cloudformation')
+                self.cfn_client = boto3.client('cloudformation',config=retries)
             else:
                 logger.debug("Setting up CFN BOTO3 Client with ASSUMED ROLE credentials")
                 cred = kwargs.get('credentials')
@@ -306,13 +356,15 @@ class Stacks(object):
                     self.cfn_client = boto3.client('cloudformation', region_name=region,
                                                    aws_access_key_id=cred.get('AccessKeyId'),
                                                    aws_secret_access_key=cred.get('SecretAccessKey'),
-                                                   aws_session_token=cred.get('SessionToken')
+                                                   aws_session_token=cred.get('SessionToken'),
+                                                   config=retries
                                                    )
                 else:
                     self.cfn_client = boto3.client('cloudformation',
                                                    aws_access_key_id=cred.get('AccessKeyId'),
                                                    aws_secret_access_key=cred.get('SecretAccessKey'),
-                                                   aws_session_token=cred.get('SessionToken')
+                                                   aws_session_token=cred.get('SessionToken'),
+                                                   config=retries
                                                    )
 
     @try_except_retry()
@@ -322,6 +374,31 @@ class Stacks(object):
                 StackName=stack_name
             )
             return response
+        except Exception as e:
+            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
+                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
+            self.logger.exception(message)
+            raise
+
+    @try_except_retry()
+    def describe_stacks_all(self, token=None):
+        """
+        Get all stacks (multiple API calls) and return one dict
+        """
+        try:
+
+            if token:
+                kwargs = {'NextToken': token}
+            else:
+                kwargs = {}
+
+            response = self.cfn_client.describe_stacks(**kwargs)
+
+            if 'Stacks' in response:
+                return response
+            else:
+                self.logger.error('describe_stacks({}) returned no data'.format(**kwargs))
+            
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
@@ -352,22 +429,10 @@ class Stacks(object):
             self.logger.exception(message)
             raise
 
-    @try_except_retry()
-    def update_stack(self, stack_name, template_url, capabilities):
-        try:
-            response = self.cfn_client.update_stack(StackName=stack_name,
-                                                    TemplateURL=template_url,
-                                                    Capabilities=capabilities)
-            return response
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
 
     def update_stack(self, stack_name, parameters, template_url, capabilities):
         try:
-            response = cfn_client.update_stack(
+            response = self.cfn_client.update_stack(
                 StackName=stack_name,
                 TemplateURL=template_url,
                 Parameters=parameters,

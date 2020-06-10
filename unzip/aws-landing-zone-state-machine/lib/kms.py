@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -15,6 +15,7 @@
 
 import boto3
 import inspect
+from botocore.exceptions import ClientError
 kms_client = boto3.client('kms')
 
 
@@ -96,4 +97,26 @@ class KMS(object):
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
                        'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
             self.logger.exception(message)
+            raise
+
+    def enable_key_rotation(self, key_id):
+        try:
+            response = self.get_key_rotation_status(key_id)
+
+            # Enable auto key rotation only if it hasn't been enabled
+            if not response.get('KeyRotationEnabled'):
+                kms_client.enable_key_rotation(KeyId=key_id)
+            return response
+        except ClientError as e:
+            self.logger.log_unhandled_exception(e)
+            raise
+
+    def get_key_rotation_status(self, key_id):
+        try:
+            response = kms_client.get_key_rotation_status(
+                KeyId=key_id
+            )
+            return response
+        except ClientError as e:
+            self.logger.log_unhandled_exception(e)
             raise

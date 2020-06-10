@@ -222,6 +222,33 @@ curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/${DIR_ADD_ON}/aws-centralized-
 popd
 popd
 
+ZONE_VERSION="v2.4.0"
+mkdir -p "${ZONE_VERSION}"
+pushd "${ZONE_VERSION}"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-initiation.template"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-addon-publisher.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-add-on-config-deployer.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-acct-password-policy.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-avm-cr.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-baseline-resource.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-config-deployer.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-handshake-state-machine.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-launch-avm.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-state-machine-trigger.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-state-machine.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-configuration.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/aws-landing-zone-validation.zip"
+
+mkdir -p "${DIR_ADD_ON}"
+pushd "${DIR_ADD_ON}"
+# typo is fixed for so[l]ution
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/${DIR_ADD_ON}/aws-ad-with-rdgw-ad-connector.template"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/${DIR_ADD_ON}/aws-ad-with-rdgw-ad-connector.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/${DIR_ADD_ON}/aws-centralized-logging-solution.zip"
+curl --fail -LO "${BUCKET_PREFIX}/${ZONE_VERSION}/${DIR_ADD_ON}/aws-centralized-logging-solution.template"
+popd
+popd
+
 
 # DIR_ZIP
 popd

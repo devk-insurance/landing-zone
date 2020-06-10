@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -14,18 +14,7 @@
 import boto3
 import inspect
 import json
-from decimal import Decimal
-
-
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, Decimal):
-            if o % 1 > 0:
-                return float(o)
-            else:
-                return int(o)
-        return super(DecimalEncoder, self).default(o)
-
+from lib.decimal_encoder import DecimalEncoder
 
 class SNS(object):
     def __init__(self, logger, **kwargs):
@@ -51,22 +40,6 @@ class SNS(object):
                                                    aws_secret_access_key=cred.get('SecretAccessKey'),
                                                    aws_session_token=cred.get('SessionToken')
                                                    )
-
-
-    def publish(self, topic_arn, message, subject, message_structure):
-        try:
-            response = self.sns_client.publish(
-                TopicArn=topic_arn,
-                Message=json.dumps(message, indent=4, cls=DecimalEncoder, sort_keys=True),
-                Subject=subject,
-                MessageStructure=message_structure,
-            )
-            return response
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
 
 
     def publish(self, topic_arn, message, subject):

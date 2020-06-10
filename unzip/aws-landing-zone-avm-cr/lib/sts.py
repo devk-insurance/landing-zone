@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -15,21 +15,22 @@
 
 import boto3
 import inspect
+from os import environ
 from botocore.exceptions import ClientError
-from lib.helper import get_sts_region, get_sts_endpoint
-
-sts_client = boto3.client('sts',
-                          region_name=get_sts_region(),
-                          endpoint_url=get_sts_endpoint())
+from lib.helper import get_service_endpoint
 
 
 class STS(object):
     def __init__(self, logger):
         self.logger = logger
+        service_name = 'sts'
+        self.sts_client = boto3.client(service_name,
+                                       region_name=environ.get('AWS_REGION'),
+                                       endpoint_url=get_service_endpoint(service_name, environ.get('AWS_REGION')))
 
     def assume_role(self, role_arn, session_name, duration=900):
         try:
-            response = sts_client.assume_role(
+            response = self.sts_client.assume_role(
                 RoleArn=role_arn,
                 RoleSessionName=session_name,
                 DurationSeconds=duration
@@ -43,7 +44,7 @@ class STS(object):
 
     def assume_role_new_account(self, role_arn, session_name, duration=900):
         try:
-            response = sts_client.assume_role(
+            response = self.sts_client.assume_role(
                 RoleArn=role_arn,
                 RoleSessionName=session_name,
                 DurationSeconds=duration
@@ -64,7 +65,7 @@ class STS(object):
 
     def get_caller_identity(self):
         try:
-            response = sts_client.get_caller_identity()
+            response = self.sts_client.get_caller_identity()
             return response
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,

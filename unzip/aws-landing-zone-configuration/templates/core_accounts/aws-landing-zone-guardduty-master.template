@@ -180,7 +180,7 @@ Resources:
       Handler: 'index.lambda_handler'
       MemorySize: 128
       Role: !GetAtt 'ForwardSnsNotificationLambdaRole.Arn'
-      Runtime: 'python3.6'
+      Runtime: 'python3.7'
       Timeout: 60
       Environment:
         Variables:

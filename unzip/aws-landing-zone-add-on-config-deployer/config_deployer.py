@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -27,7 +27,7 @@ from lib.crhelper import cfn_handler
 from uuid import uuid4
 from lib.helper import get_available_regions
 
-# initialise logger
+# initialize logger
 log_level = os.environ.get('log_level')
 logger = Logger(loglevel=log_level)
 init_failed = False
@@ -35,6 +35,7 @@ init_failed = False
 # instantiate classes from lib
 kms = KMS(logger)
 ssm = SSM(logger)
+s3 = S3(logger)
 
 
 def unique_email_validator(email_list):
@@ -195,7 +196,6 @@ def update_alphanum_with_char(value):
 
 def config_deployer(event):
     try:
-        s3 = S3(logger)
 
         # set variables
         source_bucket_name = event.get('bucket_config', {}).get('source_bucket_name')
@@ -222,10 +222,13 @@ def config_deployer(event):
         if not key_id:
             key_id = create_cmk_with_alias(alias_name, policy)
             logger.info('Key ID created: {}'.format(key_id))
+            kms.enable_key_rotation(key_id)
+            logger.info('Automatic key rotation enabled.')
         else:
             logger.info('Key ID: {} found attached with alias: {}'.format(key_id, alias_name))
             logger.info('Updating KMS key policy')
             update_key_policy(key_id, policy)
+            kms.enable_key_rotation(key_id)
 
         # Encrypt configuration bucket
         s3.put_bucket_encryption(destination_bucket_name, key_id)
@@ -284,14 +287,21 @@ def update_config_deployer(event):
         if not key_id:
             key_id = create_cmk_with_alias(alias_name, policy)
             logger.info('Key ID created: {}'.format(key_id))
+            kms.enable_key_rotation(key_id)
+            logger.info('Automatic key rotation enabled.')
         else:
             logger.info('Key ID: {} found attached with alias: {}'.format(key_id, alias_name))
             logger.info('Updating KMS key policy')
             update_key_policy(key_id, policy)
+            kms.enable_key_rotation(key_id)
 
-            # create SSM parameters to send anonymous data if opted in
-            put_ssm_parameter('/org/primary/metrics_flag', flag_value)
-            put_ssm_parameter('/org/primary/customer_uuid', str(uuid4()))
+        # create SSM parameters to send anonymous data if opted in
+        put_ssm_parameter('/org/primary/metrics_flag', flag_value)
+        put_ssm_parameter('/org/primary/customer_uuid', str(uuid4()))
+
+        # Encrypt configuration bucket
+        destination_bucket_name = event.get('bucket_config', {}).get('destination_bucket_name')
+        s3.put_bucket_encryption(destination_bucket_name, key_id)
 
         return None
     except Exception as e:
