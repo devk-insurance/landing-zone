@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -16,7 +16,7 @@
 import boto3
 import json
 import inspect
-from lib.helper import sanitize
+from lib.string_manipulation import sanitize
 
 class StateMachine(object):
     def __init__(self, logger):

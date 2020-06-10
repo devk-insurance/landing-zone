@@ -8,8 +8,10 @@ from lib.metrics import Metrics
 from os import environ
 from lib.organizations import Organizations
 from lib.manifest import Manifest
-from lib.params import ParamsHandler
-from lib.helper import sanitize, transform_params, reverse_transform_params, convert_s3_url_to_http_url, convert_http_url_to_s3_url, trim_length, download_remote_file
+from manifest.cfn_params_handler import CFNParamsHandler
+from lib.string_manipulation import sanitize, trim_length_from_end
+from lib.parameter_manipulation import transform_params, reverse_transform_params
+from lib.url_conversion import convert_s3_url_to_http_url, build_http_url, parse_bucket_key_names
 from lib.cloudformation import StackSet
 import inspect
 import os
@@ -37,7 +39,7 @@ class StateMachineTriggerLambda(object):
         self.ssm = SSM(logger)
         self.s3 = S3(logger)
         self.send = Metrics(logger)
-        self.param_handler = ParamsHandler(logger)
+        self.param_handler = CFNParamsHandler(logger)
         self.logger = logger
         self.sm_arns_map = sm_arns_map
         self.manifest = None
@@ -68,19 +70,21 @@ class StateMachineTriggerLambda(object):
     def _stage_template(self, relative_template_path):
         if relative_template_path.lower().startswith('s3'):
             # Convert the S3 URL s3://bucket-name/object
-            # to HTTP URL https://s3.amazonaws.com/bucket-name/object
-            s3_url = convert_s3_url_to_http_url(relative_template_path)
+            # to HTTP URL https://bucket-name.s3.Region.amazonaws.com/key-name
+            http_url = convert_s3_url_to_http_url(relative_template_path)
         else:
             local_file = os.path.join(self.manifest_folder, relative_template_path)
-            remote_file = "{}/{}_{}".format(TEMPLATE_KEY_PREFIX, self.token, relative_template_path[relative_template_path.rfind('/')+1:])
-            logger.info("Uploading the template file: {} to S3 bucket: {} and key: {}".format(local_file, self.staging_bucket, remote_file))
-            self.s3.upload_file(self.staging_bucket, local_file, remote_file)
-            s3_url = "{}{}{}{}".format('https://s3.amazonaws.com/', self.staging_bucket, '/', remote_file)
-        return s3_url
+            key_name = "{}/{}_{}".format(TEMPLATE_KEY_PREFIX, self.token, relative_template_path)
+            logger.info("Uploading the template file: {} to S3 bucket: {} and key: {}".format(local_file,
+                                                                                              self.staging_bucket,
+                                                                                              key_name))
+            self.s3.upload_file(self.staging_bucket, local_file, key_name)
+            http_url = build_http_url(self.staging_bucket, key_name)
+        return http_url
 
     def _load_params(self, relative_parameter_path, account = None, region = None):
         if relative_parameter_path.lower().startswith('s3'):
-            parameter_file = download_remote_file(self.logger, relative_parameter_path)
+            parameter_file = self.s3.get_s3_object(relative_parameter_path)
         else:
             parameter_file = os.path.join(self.manifest_folder, relative_parameter_path)
 
@@ -298,8 +302,9 @@ class StateMachineTriggerLambda(object):
 
                 template_http_url = sm_input.get('ResourceProperties').get('TemplateURL', '')
                 if template_http_url:
-                    template_s3_url = convert_http_url_to_s3_url(template_http_url)
-                    local_template_file = download_remote_file(self.logger, template_s3_url)
+                    bucket_name, key_name = parse_bucket_key_names(template_http_url)
+                    local_template_file = tempfile.mkstemp()[1]
+                    self.s3.download_file(bucket_name, key_name, local_template_file)
                 else:
                     self.logger.error("TemplateURL in state machine input is empty. Check sm_input:{}".format(sm_input))
                     return False
@@ -374,7 +379,7 @@ class StateMachineTriggerLambda(object):
 
     def _run_or_queue_state_machine(self, sm_input, sm_arn, list_sm_exec_arns, sm_name):
         logger.info("State machine Input: {}".format(sm_input))
-        exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), trim_length(sm_name.replace(" ", ""), 50),
+        exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), trim_length_from_end(sm_name.replace(" ", ""), 50),
                                   time.strftime("%Y-%m-%dT%H-%M-%S"))
         # If Sequential, kick off the first SM, and save the state machine input JSON
         # for the rest in SSM parameter store under /job_id/0 tree
@@ -558,27 +563,6 @@ class StateMachineTriggerLambda(object):
             self.logger.exception(message)
             raise
 
-    def start_baseline_resources_sm(self, sm_arn_stack_set):
-        try:
-            logger.info("Parsing Basline Resources from {} file".format(self.manifest_file_path))
-            list_sm_exec_arns = []
-            count = 0
-            for resource in self.manifest.baseline_resources:
-                if resource.deploy_method.lower() == 'stack_set':
-                    self._deploy_resource(resource, sm_arn_stack_set, list_sm_exec_arns)
-                    # Count number of stacksets
-                    count += 1
-                else:
-                    raise Exception("Unsupported deploy_method: {} found for resource {} in Manifest".format(resource.deploy_method, resource.name))
-            data = {"BaselineStackSetCount": str(count)}
-            self.send.metrics(data)
-            self._save_sm_exec_arn(list_sm_exec_arns)
-            return
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            raise
-
     def trigger_state_machines(self):
         try:
             self.manifest = Manifest(self.manifest_file_path)
@@ -593,9 +577,6 @@ class StateMachineTriggerLambda(object):
                 self.start_service_control_policy_sm(self.sm_arns_map.get('service_control_policy'))
             elif self.pipeline_stage == 'service_catalog':
                 self.start_service_catalog_sm(self.sm_arns_map.get('service_catalog'))
-            elif self.pipeline_stage == 'baseline_resources':
-                self.start_baseline_resources_sm(self.sm_arns_map.get('stack_set'))
-
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
             self.logger.exception(message)
@@ -645,15 +626,11 @@ class StateMachineTriggerLambda(object):
                             elif self.pipeline_stage == 'service_catalog':
                                 sm_arn = self.sm_arns_map.get('service_catalog')
                                 sm_name = sm_input.get('ResourceProperties').get('SCProduct').get('ProductName')
-                            elif self.pipeline_stage == 'baseline_resources':
-                                sm_arn = self.sm_arns_map.get('stack_set')
-                                sm_name = sm_input.get('ResourceProperties').get('StackSetName')
-                                sm_input = self._populate_ssm_params(sm_input)
 
                             if self._compare_template_and_params(sm_input):
                                 continue
                             else:
-                                exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), trim_length(sm_name.replace(" ", ""), 50),
+                                exec_name = "%s-%s-%s" % (sm_input.get('RequestType'), trim_length_from_end(sm_name.replace(" ", ""), 50),
                                                           time.strftime("%Y-%m-%dT%H-%M-%S"))
                                 sm_exec_arn = self.state_machine.trigger_state_machine(sm_arn, sm_input, exec_name)
                                 self._save_sm_exec_arn([sm_exec_arn])

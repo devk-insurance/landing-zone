@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -18,7 +18,7 @@ from lib.logger import Logger
 import os
 import inspect
 
-# initialise logger
+# initialize logger
 log_level = os.environ['log_level']
 logger = Logger(loglevel=log_level)
 
@@ -32,8 +32,6 @@ def cloudformation(event, function_name):
         response = stack_set.describe_stack_set_operation()
     elif function_name == 'list_stack_instances':
         response = stack_set.list_stack_instances()
-    elif function_name == 'list_stack_instances_account_ids':
-        response = stack_set.list_stack_instances_account_ids()
     elif function_name == 'create_stack_set':
         response = stack_set.create_stack_set()
     elif function_name == 'create_stack_instances':
@@ -254,27 +252,35 @@ def service_control_policy(event, function_name):
 def launch_avm(event, function_name):
     sc = ServiceCatalog(event, logger)
     logger.info("Router FunctionName: {}".format(function_name))
-    if function_name == 'configure_count':
-        params_list = event.get('ResourceProperties').get('ProvisioningParametersList', [])
-        logger.info("List of Parameters: {}".format(params_list))
-        event.update({'Index': 0})
-        event.update({'Step': 1})
-        event.update({'Count': len(params_list)})
-        return event
-    elif function_name == 'iterator':
+    if function_name == 'iterator':
         logger.info("Router FunctionName: {}".format(function_name))
         index = event.get('Index')
         step = event.get('Step')
         count = event.get('Count')
+        # Check the iteration count. Count is the number of items (ex 4)
+        # Index points to the current (base 0) item. Max index is count - 1 (3)
+        # When index = count we are done - return with continue set to false
+        prod_params = {} # initialize to empty dict
+        _continue = False # default if nothing to process
         params_list = event.get('ResourceProperties').get('ProvisioningParametersList', [])
-        prod_params = params_list[index] if len(params_list) > index else None
-
-        if index < count:
+        
+        # Is there an item to process?
+        if index < count and params_list[index]:
             _continue = True
-        else:
-            _continue = False
 
-        index = index + step
+            prod_params = params_list[index] if len(params_list) > index else None
+
+            # The following must percolate up to the top level to be backward-compatible 
+            # with < 2.3
+            # Update event and remove from prod_params
+
+            event.update({'ProvisionedProductId': prod_params.pop('ProvisionedProductId', 'None')})
+
+            event.update({'ExistingParameterKeys': prod_params.pop('ExistingParameterKeys', [])})
+
+            event.update({'ProvisionedProductExists': prod_params.pop('ProvisionedProductExists', '')})
+            
+            index = index + 1 # point to next record to process
 
         event.update({'Index': index})
         event.update({'Step': step})
@@ -282,8 +288,6 @@ def launch_avm(event, function_name):
         event.update({'NextPageToken': '0'})
         event.update({'ProdParams': prod_params})
         return event
-    elif function_name == 'search_provisioned_products':
-        response = sc.search_provisioned_products()
     elif function_name == 'provision_product':
         response = sc.provision_product()
     elif function_name == 'describe_record':
@@ -292,8 +296,6 @@ def launch_avm(event, function_name):
         response = sc.update_provisioned_product()
     elif function_name == 'terminate_provisioned_product':
         response = sc.terminate_provisioned_product()
-    elif function_name == 'lookup_product':
-        response = sc.lookup_product()
     else:
         message = "Function name does not match any function in the handler file."
         logger.info(message)

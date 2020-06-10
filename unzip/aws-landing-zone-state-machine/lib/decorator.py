@@ -3,7 +3,7 @@ from random import randint
 from functools import wraps
 from lib.logger import Logger
 
-# initialise logger
+# initialize logger
 logger = Logger(loglevel='info')
 
 

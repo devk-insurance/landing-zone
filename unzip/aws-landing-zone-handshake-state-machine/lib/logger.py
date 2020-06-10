@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -13,14 +13,7 @@
 
 import json
 import logging
-from datetime import datetime, date
-
-class DateTimeEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, (datetime, date)):
-            serial = o.isoformat()
-            return serial
-        raise TypeError("Type %s not serializable" % type(o))
+from lib.datetime_encoder import DateTimeEncoder
 
 
 class Logger(object):
@@ -80,3 +73,14 @@ class Logger(object):
     def exception(self, message, **kwargs):
         """wrapper for logging.exception call"""
         self.log.exception(self._format(message), **kwargs)
+
+    def log_unhandled_exception(self, message):
+        """log unhandled exception"""
+        self.log.exception("Unhandled Exception: {}".format(message))
+
+    def log_general_exception(self, file, method, exception):
+        """log general exception"""
+        message = {'FILE': file,
+                   'METHOD': method,
+                   'EXCEPTION': str(exception)}
+        self.log.exception(self._format(message))

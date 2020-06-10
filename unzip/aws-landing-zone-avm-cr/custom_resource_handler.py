@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -22,9 +22,9 @@ import netaddr
 from os import environ
 import time
 import inspect
-from lib.params import ParamsHandler
-from botocore.exceptions import ClientError
-from lib.helper import sanitize, trim_length
+from uuid import uuid4
+from manifest.cfn_params_handler import CFNParamsHandler
+from lib.string_manipulation import sanitize, trim_length_from_end
 
 
 class StepFunctions(object):
@@ -60,27 +60,31 @@ class StepFunctions(object):
 
             # Execute State Machine
             if resource_type == 'Custom::StackInstance':
-                exec_name = "%s-%s-%s-%s" % ('AVM-CR', request_type,
-                                             trim_length(self.event.get('ResourceProperties', {}).get('StackSetName'), 45),
-                                             time.strftime("%Y-%m-%dT%H-%M-%S"))
+                exec_name = "%s-%s-%s-%s-%s-%s" % ('AVM-CR',
+                                                   request_type,
+                                                   trim_length_from_end(self.event.get('ResourceProperties', {})
+                                                                        .get('StackSetName'), 45),
+                                                   time.strftime("%H-%M-%S"),
+                                                   str(time.time()).split('.')[1],  # append microseconds
+                                                   str(uuid4()).split('-')[1][:2])
             elif resource_type == 'Custom::Organizations':
                 exec_name = "%s-%s-%s-%s" % ('AVM-CR', request_type,
-                                             trim_length(self.event.get('ResourceProperties', {}).get('OUName') + '-' +
+                                             trim_length_from_end(self.event.get('ResourceProperties', {}).get('OUName') + '-' +
                                                          self.event.get('ResourceProperties', {}).get('AccountName'), 45),
                                              time.strftime("%Y-%m-%dT%H-%M-%S"))
             elif resource_type == 'Custom::ServiceControlPolicy':
                 exec_name = "%s-%s-%s-%s" % ('AVM-CR', request_type,
-                                             trim_length(self.event.get('ResourceProperties', {}).get('Operation'), 45),
+                                             trim_length_from_end(self.event.get('ResourceProperties', {}).get('Operation'), 45),
                                              time.strftime("%Y-%m-%dT%H-%M-%S"))
             elif resource_type == 'Custom::HandShakeStateMachine':
                 exec_name = "%s-%s-%s-%s" % ('AVM-CR', request_type,
-                                             trim_length(self.event.get('ResourceProperties', {}).get('ServiceType') +
+                                             trim_length_from_end(self.event.get('ResourceProperties', {}).get('ServiceType') +
                                                          '-' + self.event.get('ResourceProperties', {}).get('SpokeRegion')
                                                          + '-' + self.event.get('ResourceProperties', {}).get('SpokeAccountId'), 45),
                                              time.strftime("%Y-%m-%dT%H-%M-%S"))
             elif resource_type == 'Custom::CheckAVMExistsForAccount':
                 exec_name = "%s-%s-%s-%s" % ('AVM-CR', request_type,
-                                             trim_length(self.event.get('ResourceProperties', {}).get('ProdParams', {}).get('OUName') + '-' +
+                                             trim_length_from_end(self.event.get('ResourceProperties', {}).get('ProdParams', {}).get('OUName') + '-' +
                                              self.event.get('ResourceProperties', {}).get('ProdParams', {}).get('AccountName'), 45),
                                              time.strftime("%Y-%m-%dT%H-%M-%S"))
             else:
@@ -211,9 +215,11 @@ class KeyPair(object):
 
         if account is not None:
             try:
-                param_handler = ParamsHandler(self.logger)
+                param_handler = CFNParamsHandler(self.logger)
                 self.logger.info("Generating EC2 key pair")
-                key_name = param_handler.create_key_pair(account, region, key_material, key_fingerprint)
+                key_name = param_handler._create_key_pair(account, region,
+                                                          key_material,
+                                                          key_fingerprint)
                 self.logger.info("Successfully generated EC2 key pair: {}".format(key_name))
                 return {'KeyName': key_name}
             except Exception as e:

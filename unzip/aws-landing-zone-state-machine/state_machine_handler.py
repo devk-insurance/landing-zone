@@ -1,5 +1,5 @@
 ###################################################################################################################### 
-#  Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           # 
+#  Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
 #                                                                                                                    # 
 #  Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance     # 
 #  with the License. A copy of the License is located at                                                             # 
@@ -13,31 +13,32 @@
 
 # !/bin/python
 
+from os import environ
+import requests
+from botocore.exceptions import ClientError
+from json import dumps, loads
+import inspect
+import os
+import json
+import tempfile
+import filecmp
+import time
+from random import randint
+from lib.metrics import Metrics
+from lib.ssm import SSM
+from lib.ec2 import EC2
+from lib.sts import STS
+from lib.iam import IAM
+from lib.s3 import S3
 from lib.organizations import Organizations as Org
 from lib.service_catalog import ServiceCatalog as SC
 from lib.scp import ServiceControlPolicy as SCP
 from lib.directory_service import DirectoryService
 from lib.cloudformation import StackSet, Stacks
 from lib.assume_role_helper import AssumeRole
-from lib.s3 import S3
-from lib.metrics import Metrics
-from lib.ssm import SSM
-from lib.ec2 import EC2
-from lib.sts import STS
-from lib.iam import IAM
-from os import environ
-import requests
-from botocore.exceptions import ClientError
-from json import dumps, loads
-import inspect
-import time
-import os
-import json
-from lib.helper import sanitize, convert_http_url_to_s3_url, download_remote_file
-import tempfile
-import filecmp
-import time
-from random import randint
+from lib.list_manipulation import list_sanitizer
+from lib.string_manipulation import sanitize
+from lib.url_conversion import parse_bucket_key_names
 
 
 class CloudFormation(object):
@@ -121,49 +122,6 @@ class CloudFormation(object):
 
             operation_status = response.get('StackSetOperation', {}).get('Status')
             self.event.update({'OperationStatus': operation_status})
-
-            return self.event
-        except Exception as e:
-            message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
-                       'METHOD': inspect.stack()[0][3], 'EXCEPTION': str(e)}
-            self.logger.exception(message)
-            gf = GeneralFunctions(self.event, self.logger)
-            gf.send_failure_to_cfn()
-            raise
-
-    def list_stack_instances_account_ids(self):
-        try:
-            self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
-            self.logger.info(self.params)
-            accounts = self.event.get('StackInstanceAccountList', [])
-
-            # Check if stack instances exist
-            stack_set = StackSet(self.logger)
-            if self.event.get('NextToken') is not None and self.event.get('NextToken') != 'Complete':
-                response = stack_set.list_stack_instances(StackSetName=self.params.get('StackSetName'), MaxResults=20,
-                                                          NextToken=self.event.get('NextToken'))
-            else:
-                response = stack_set.list_stack_instances(StackSetName=self.params.get('StackSetName'), MaxResults=20)
-
-            self.logger.info("List SI Accounts Response")
-            self.logger.info(response)
-
-            if response:
-                if not response.get('Summaries'):  # 'True' if list is empty
-                    self.event.update({'NextToken': 'Complete'})
-                    self.logger.info("No existing stack instances found. (Summaries List: Empty)")
-                else:
-                    for instance in response.get('Summaries'):
-                        account_id = instance.get('Account')
-                        accounts.append(account_id)
-
-                    self.event.update({'StackInstanceAccountList': list(set(accounts))})
-                    self.logger.info("Next Token Returned: {}".format(response.get('NextToken')))
-
-                    if response.get('NextToken') is None:
-                        self.event.update({'NextToken': 'Complete'})
-                    else:
-                        self.event.update({'NextToken': response.get('NextToken')})
 
             return self.event
         except Exception as e:
@@ -570,16 +528,6 @@ class Organizations(object):
             gf.send_failure_to_cfn()
             raise
 
-    def _strip_list_items(self, array):
-        return [item.strip() for item in array]
-
-    def _remove_empty_strings(self, array):
-        return [x for x in array if x != '']
-
-    def _list_sanitizer(self, array):
-        stripped_array = self._strip_list_items(array)
-        return self._remove_empty_strings(stripped_array)
-
     def _empty_seperator_handler(self, delimiter, nested_ou_name):
         if delimiter == "":
             nested_ou_name_list = [nested_ou_name]
@@ -606,7 +554,7 @@ class Organizations(object):
     def _get_ou_id(self, org, parent_id, nested_ou_name, delimiter):
         try:
             nested_ou_name_list = self._empty_seperator_handler(delimiter, nested_ou_name)
-            response = self._list_ou_for_parent(org, parent_id, self._list_sanitizer(nested_ou_name_list))
+            response = self._list_ou_for_parent(org, parent_id, list_sanitizer(nested_ou_name_list))
             self.logger.info(response)
             return response
         except Exception as e:
@@ -676,7 +624,7 @@ class Organizations(object):
             self.logger.info("Executing: " + self.__class__.__name__ + "/" + inspect.stack()[0][3])
             self.logger.info(self.params)
             nested_ou_name_list = self._empty_seperator_handler(delimiter, nested_ou_name)
-            response = self._create_child_ou(org, parent_id, self._list_sanitizer(nested_ou_name_list))
+            response = self._create_child_ou(org, parent_id, list_sanitizer(nested_ou_name_list))
             self.logger.info("Destination OU ID: {}".format(response))
             return response
         except Exception as e:
@@ -1042,6 +990,7 @@ class ServiceCatalog(object):
 
     def __init__(self, event, logger):
         self.event = event
+        self.s3 = S3(logger)
         self.params = event.get('ResourceProperties')
         self.logger = logger
         self.logger.info(self.__class__.__name__ + " Class Event")
@@ -1064,17 +1013,17 @@ class ServiceCatalog(object):
             if portfolio_list:
                 for portfolio in portfolio_list:
                     if portfolio.get('DisplayName') == portfolio_event.get('PortfolioName'):
-                        value = "yes"
+                        value = True
                         self.logger.info("Portfolio Found")
                         self.event.update({'PortfolioId': portfolio.get('Id')})
                         self.event.update({'PortfolioExist': value})
                         return self.event
                     else:
-                        value = "no"
+                        value = False
                         continue
             else:
                 self.logger.info("Portfolio List is empty.")
-                value = "no"
+                value = False
             self.event.update({'PortfolioExist': value})
             return self.event
         except Exception as e:
@@ -1266,16 +1215,16 @@ class ServiceCatalog(object):
                 for product in product_list:
                     self.logger.info(product)
                     if product.get('ProductViewSummary', {}).get('Name') == product_event.get('ProductName'):
-                        value = 'yes'
+                        value = True
                         self.event.update({'ProductId': product.get('ProductViewSummary', {}).get('ProductId')})
                         self.event.update({'ProductExist': value})
                         return self.event
                     else:
                         self.logger.info("Product not found in list")
-                        value = 'no'
+                        value = False
             else:
                 self.logger.info("Product not found - empty list")
-                value = 'no'
+                value = False
             self.event.update({'ProductExist': value})
             return self.event
         except Exception as e:
@@ -1742,14 +1691,17 @@ class ServiceCatalog(object):
 
             # download new template file
             new_template_http_url = self.params.get('SCProduct', {}).get('ProvisioningArtifactParameters').get('Info').get('LoadTemplateFromURL')
-            new_template_s3_url = convert_http_url_to_s3_url(new_template_http_url)
-            local_new_template_file = download_remote_file(self.logger, new_template_s3_url)
+            bucket_name, key_name = parse_bucket_key_names(new_template_http_url)
+            local_new_template_file = tempfile.mkstemp()[1]
+            self.s3.download_file(bucket_name, key_name, local_new_template_file)
 
             # download existing template file
             response_describe_artifact = sc.describe_provisioning_artifact(product_id, artifact_id)
             old_template_http_url = response_describe_artifact.get('Info').get('TemplateUrl')
-            old_template_s3_url = convert_http_url_to_s3_url(old_template_http_url)
-            local_old_template_file = download_remote_file(self.logger, old_template_s3_url)
+            self.logger.info(old_template_http_url)
+            bucket_name, key_name = parse_bucket_key_names(old_template_http_url)
+            local_old_template_file = tempfile.mkstemp()[1]
+            self.s3.download_file(bucket_name, key_name, local_old_template_file)
 
             old_template_file = tempfile.mkstemp()[1] # [1] == os.path.abspath(file)
             new_template_file = tempfile.mkstemp()[1]
@@ -1881,7 +1833,7 @@ class ServiceCatalog(object):
                         self.logger.info("Portfolio Found")
                         portfolio_id = portfolio.get('Id')
                         self.event.update({'PortfolioId': portfolio_id})
-                        self.event.update({'PortfolioExist': 'yes'})
+                        self.event.update({'PortfolioExist': True})
 
                         response = sc.search_products_as_admin(portfolio_id)
                         product_list = response.get('ProductViewDetails')
@@ -1893,7 +1845,7 @@ class ServiceCatalog(object):
                                 if product.get('ProductViewSummary', {}).get('Name') == product_name:
                                     product_id = product.get('ProductViewSummary', {}).get('ProductId')
                                     self.event.update({'ProductId': product_id})
-                                    self.event.update({'ProductExist': 'yes'})
+                                    self.event.update({'ProductExist': True})
 
                                     self.logger.info("Listing the provisioning artifact")
                                     response = sc.list_provisioning_artifacts(product_id)
@@ -1906,8 +1858,8 @@ class ServiceCatalog(object):
                                         self.event.update({'ProvisioningArtifactId': artifact_id})
                                         return self.event
 
-            self.event.update({'PortfolioExist': 'no'})
-            self.event.update({'ProductExist': 'no'})
+            self.event.update({'PortfolioExist': False})
+            self.event.update({'ProductExist': False})
             return self.event
         except Exception as e:
             message = {'FILE': __file__.split('/')[-1], 'CLASS': self.__class__.__name__,
@@ -2196,11 +2148,14 @@ class ServiceControlPolicy(object):
         self.event = event
         self.params = event.get('ResourceProperties')
         self.logger = logger
+        self.s3 = S3(logger)
         self.logger.info(self.__class__.__name__ + " Class Event")
         self.logger.info(event)
 
-    def _load_policy(self, relative_policy_path):
-        policy_file = download_remote_file(self.logger, relative_policy_path)
+    def _load_policy(self, http_policy_path):
+        bucket_name, key_name = parse_bucket_key_names(http_policy_path)
+        policy_file = tempfile.mkstemp()[1]
+        self.s3.download_file(bucket_name, key_name, policy_file)
 
         self.logger.info("Parsing the policy file: {}".format(policy_file))
 
@@ -2259,8 +2214,7 @@ class ServiceControlPolicy(object):
 
             scp = SCP(self.logger)
             self.logger.info("Creating Service Control Policy")
-            policy_s3_url = convert_http_url_to_s3_url(policy_doc.get('PolicyURL'))
-            policy_content = self._load_policy(policy_s3_url)
+            policy_content = self._load_policy(policy_doc.get('PolicyURL'))
 
             response = scp.create_policy(policy_doc.get('Name'),
                                          policy_doc.get('Description'),
@@ -2285,8 +2239,7 @@ class ServiceControlPolicy(object):
             self.logger.info(self.params)
             policy_doc = self.params.get('PolicyDocument')
             policy_id = self.event.get('PolicyId')
-            policy_s3_url = convert_http_url_to_s3_url(policy_doc.get('PolicyURL'))
-            policy_content = self._load_policy(policy_s3_url)
+            policy_content = self._load_policy(policy_doc.get('PolicyURL'))
 
             scp = SCP(self.logger)
             self.logger.info("Updating Service Control Policy")
