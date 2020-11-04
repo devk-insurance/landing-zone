@@ -2,7 +2,7 @@
 
 Vendored copy of the AWS LandingZone solution using CloudFormation.
 
-This repository contains the AWS LandingZone solution from version 1.0.2 until 2.4.0
+This repository contains the AWS LandingZone solution from version 1.0.2 until 2.4.1
 
 ## repository structure
 
