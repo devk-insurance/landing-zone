@@ -144,7 +144,7 @@ class SSM(object):
                 ParameterFilters=[
                     {
                         'Key': 'Name',
-                        'Option': 'BeginsWith' if begins_with else 'Equals',
+                        'Option': 'Contains' if begins_with else 'Equals',
                         'Values': [parameter_name]
                     }
                 ]
