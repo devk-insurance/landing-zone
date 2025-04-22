@@ -1,0 +1,3 @@
+# To unzip all the Landing Zone code within the GitHub repo downloaded from here:
+# for x in $(ls ../../zip/v2.4.6/); do unzip ../../zip/v2.4.6/$x -d ${x%.*}; done;
+

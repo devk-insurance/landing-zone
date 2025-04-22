@@ -1,3 +1,0 @@
-"""Package settings."""
-
-fake = False
